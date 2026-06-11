@@ -32,58 +32,69 @@ from monai.transforms import (
 
 # 同目录下识别 image / label 文件名的关键词
 _LABEL_KEYS = ("label", "seg", "mask", "gt")
-_IMAGE_KEYS = ("img", "image", "ct", "cta", "vol")
+_IMAGE_KEYS = ("image", "img", "cta", "ct", "vol")
+
+
+def _case_id_from(filename: str, markers: tuple[str, ...]) -> str:
+    """从文件名提取病例 id, 去掉 img/label 标记.
+
+    '1.img.nii.gz'   -> '1'
+    '1.label.nii.gz' -> '1'
+    'img.nii.gz'     -> ''   (嵌套布局, id 用父目录名)
+    """
+    name = filename
+    stem = name[:-7] if name.endswith(".nii.gz") else name.rsplit(".", 1)[0]
+    low = stem.lower()
+    for m in markers:
+        idx = low.rfind(m)
+        if idx >= 0:
+            stem = stem[:idx] + stem[idx + len(m):]
+            break
+    return stem.strip("._- ")
 
 
 def discover_cases(data_root: str | Path) -> list[dict[str, str]]:
-    """递归发现 (image, label) 配对, 返回 MONAI 风格的字典列表.
+    """递归发现 (image, label) 配对. 兼容两种布局:
 
-    返回: [{"image": "/path/img.nii.gz", "label": "/path/label.nii.gz", "id": "<case>"}, ...]
+      A) 嵌套: <case>/img.nii.gz + <case>/label.nii.gz
+      B) 平铺: <group>/<id>.img.nii.gz + <group>/<id>.label.nii.gz  (ImageCAS Kaggle)
+
+    配对依据: (父目录, 去掉img/label标记后的id前缀) 相同即配对.
     """
     data_root = Path(data_root)
     if not data_root.is_dir():
         raise FileNotFoundError(f"data_root 不存在或不是目录: {data_root}")
 
-    items: list[dict[str, str]] = []
-    seen_dirs: set[Path] = set()
+    images: dict[tuple[str, str], Path] = {}
+    labels: dict[tuple[str, str], Path] = {}
+    for p in sorted(data_root.rglob("*.nii.gz")):
+        low = p.name.lower()
+        is_label = any(k in low for k in _LABEL_KEYS)
+        is_image = (not is_label) and any(k in low for k in _IMAGE_KEYS)
+        if is_label:
+            labels[(str(p.parent), _case_id_from(p.name, _LABEL_KEYS))] = p
+        elif is_image:
+            images[(str(p.parent), _case_id_from(p.name, _IMAGE_KEYS))] = p
 
-    for label_path in sorted(data_root.rglob("*.nii.gz")):
-        name = label_path.name.lower()
-        if not any(k in name for k in _LABEL_KEYS):
+    items: list[dict[str, str]] = []
+    for key, img in images.items():
+        lab = labels.get(key)
+        if lab is None:
             continue
-        folder = label_path.parent
-        if folder in seen_dirs:
-            continue
-        image_path = _find_image_in(folder, exclude=label_path)
-        if image_path is None:
-            continue
-        seen_dirs.add(folder)
-        items.append(
-            {
-                "image": str(image_path),
-                "label": str(label_path),
-                "id": folder.name,
-            }
-        )
+        parent, cid = key
+        items.append({
+            "image": str(img),
+            "label": str(lab),
+            "id": cid or Path(parent).name,
+        })
 
     if not items:
         raise RuntimeError(
             f"在 {data_root} 下没发现任何 image/label 配对. "
-            f"检查目录结构是否为 <case>/img.nii.gz + label.nii.gz"
+            f"检查目录结构, 期望 <id>.img.nii.gz + <id>.label.nii.gz "
+            f"或 <case>/img.nii.gz + label.nii.gz"
         )
-    return items
-
-
-def _find_image_in(folder: Path, exclude: Path) -> Path | None:
-    candidates = [
-        p for p in folder.glob("*.nii.gz")
-        if p != exclude and any(k in p.name.lower() for k in _IMAGE_KEYS)
-    ]
-    if candidates:
-        return sorted(candidates)[0]
-    # 退路: 同目录里除 label 外只有一个 nii.gz, 那就是它
-    others = [p for p in folder.glob("*.nii.gz") if p != exclude]
-    return sorted(others)[0] if len(others) == 1 else None
+    return sorted(items, key=lambda d: d["id"])
 
 
 def make_split(
