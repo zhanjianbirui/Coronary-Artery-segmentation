@@ -1,5 +1,5 @@
 # ============================================================
-# ImageCAS 冠脉分割 - 默认配置
+# ImageCAS 冠脉分割 - 优化配置 (SegResNet + clDice + TTA + 后处理)
 # 改实验只改这里, 不动代码. 用 --config 指向别的 yaml 可覆盖.
 # ============================================================
 
@@ -7,45 +7,53 @@ project_name: coronary-seg
 seed: 42
 
 data:
-  # prepare_data.py 下载后会把真实路径写进这里 (或用 --data_root 覆盖)
-  data_root: ""                  # ImageCAS 根目录, 内含一堆 <case_id>/ 文件夹
-  split_json: splits/split.json  # 训练/验证/测试划分 (prepare_data.py 生成)
-  cache_rate: 0.0                # MONAI CacheDataset 缓存比例; HPC 内存大可调高加速
-  num_workers: 8                 # DataLoader 进程数, 对齐 --cpus-per-task
+  data_root: ""                  # 用 --data_root 覆盖, 或留空(split.json 内是绝对路径)
+  split_json: splits/split.json
+  cache_rate: 0.0
+  num_workers: 8
 
 preprocess:
-  # CTA HU 窗位: 冠脉强化后造影剂呈高密度. 这个窗口把关注范围拉到 [0,1].
   a_min: -200.0
   a_max: 800.0
   clip: true
-  # 重采样到统一体素间距 (mm). 冠脉细小, 不宜过度下采样.
   target_spacing: [0.5, 0.5, 0.5]
-  # 训练 patch 大小 (体素). 必须能被网络下采样倍数整除.
   patch_size: [128, 128, 128]
 
 train:
-  max_epochs: 500
-  batch_size: 2                  # 每个 batch 的 patch 数; A100 80G 可适当加大
-  samples_per_image: 2           # 每张图每次采样几个 patch (RandCropByPosNegLabel)
-  pos_ratio: 0.8                 # 正样本(含血管)patch 占比, 对抗类别不平衡
+  max_epochs: 250                # 一个4天作业内可跑完整个余弦退火 (~16min/epoch x250 ≈ 67h)
+  batch_size: 2                  # SegResNet 较重; A100 80G 若显存富余可试 4
+  samples_per_image: 2
+  pos_ratio: 0.8
   lr: 0.0002
   weight_decay: 0.00001
-  amp: true                      # 混合精度, A100 上显著加速省显存
-  val_interval: 5                # 每隔几个 epoch 验证一次
-  grad_clip: 12.0                # 梯度裁剪阈值, 0 表示关闭
+  amp: true
+  val_interval: 5
+  grad_clip: 12.0
 
 model:
-  name: unet                     # 模型工厂的键; 目前支持 'unet'
+  name: segresnet                # unet | segresnet
   in_channels: 1
-  out_channels: 2                # 背景 + 冠脉 (二分类)
+  out_channels: 2
+  # --- SegResNet 参数 ---
+  init_filters: 32
+  blocks_down: [1, 2, 2, 4]
+  blocks_up: [1, 1, 1]
+  dropout: 0.0
+  # --- UNet 参数 (切回 name=unet 时用) ---
   channels: [16, 32, 64, 128, 256]
   strides: [2, 2, 2, 2]
   num_res_units: 2
-  dropout: 0.0
+
+loss:
+  name: dice_ce_cldice           # dice_ce | dice_ce_cldice
+  cldice_weight: 0.5             # 总损失 = DiceCE + 0.5*clDice
+  cldice_iters: 3
 
 infer:
-  sw_batch_size: 4               # 滑窗推理时每批窗口数
-  overlap: 0.5                   # 滑窗重叠率, 越高越准越慢
+  sw_batch_size: 4
+  overlap: 0.5
+  tta: true                      # 8 向翻转平均 (更准, 推理慢 8 倍)
+  min_component_voxels: 30       # 删除 <30 体素的连通域 (去碎片), 0=关闭
 
 output:
-  work_dir: runs/exp_default     # checkpoint / 日志 / 预测输出根目录
+  work_dir: runs/exp_segresnet   # 新目录, 不覆盖旧的 exp_a100

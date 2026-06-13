@@ -54,12 +54,25 @@ class ModelCfg:
     strides: list[int] = field(default_factory=lambda: [2, 2, 2, 2])
     num_res_units: int = 2
     dropout: float = 0.0
+    # --- SegResNet 专用 (name=segresnet 时生效) ---
+    init_filters: int = 32
+    blocks_down: list[int] = field(default_factory=lambda: [1, 2, 2, 4])
+    blocks_up: list[int] = field(default_factory=lambda: [1, 1, 1])
+
+
+@dataclass
+class LossCfg:
+    name: str = "dice_ce_cldice"      # dice_ce | dice_ce_cldice
+    cldice_weight: float = 0.5        # clDice 项权重 (总损失 = DiceCE + w*clDice)
+    cldice_iters: int = 3             # 软骨架迭代次数, 越大越准越慢
 
 
 @dataclass
 class InferCfg:
     sw_batch_size: int = 4
     overlap: float = 0.5
+    tta: bool = True                  # 测试时增强 (8 向翻转平均), 推理慢 8 倍但更准
+    min_component_voxels: int = 30    # 后处理: 删除小于此体素数的连通域(去碎片假阳性), 0=关闭
 
 
 @dataclass
@@ -75,6 +88,7 @@ class Config:
     preprocess: PreprocessCfg = field(default_factory=PreprocessCfg)
     train: TrainCfg = field(default_factory=TrainCfg)
     model: ModelCfg = field(default_factory=ModelCfg)
+    loss: LossCfg = field(default_factory=LossCfg)
     infer: InferCfg = field(default_factory=InferCfg)
     output: OutputCfg = field(default_factory=OutputCfg)
 
@@ -95,6 +109,7 @@ class Config:
             preprocess=PreprocessCfg(**raw.get("preprocess", {})),
             train=TrainCfg(**raw.get("train", {})),
             model=ModelCfg(**raw.get("model", {})),
+            loss=LossCfg(**raw.get("loss", {})),
             infer=InferCfg(**raw.get("infer", {})),
             output=OutputCfg(**raw.get("output", {})),
         )
