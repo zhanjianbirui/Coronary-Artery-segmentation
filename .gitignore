@@ -1,0 +1,27 @@
+# 模型权重 / checkpoint
+*.pth
+*.pt
+*.ckpt
+
+# 训练输出目录
+runs/
+**/runs/
+
+# 数据和缓存
+cache/
+*.nii
+*.nii.gz
+ImageCAS/
+
+# Python 缓存
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# 可视化输出
+vis_cases/
+debug_vis/
+*.png
+
+# 系统文件
+.DS_Store
