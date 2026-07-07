@@ -41,13 +41,13 @@ python scripts/train.py \
     --k 2 \
     --crop-size 384 \
     --batch-size 32 \
-    --epochs 100 \
+    --epochs 70 \
     --lr 3e-4 \
     --grad-clip 1.0 \
     --backbone segresnet \
     --num-workers $SLURM_CPUS_PER_TASK \
     --pin-memory \
-    --out-dir runs/exp_2p5d \
+    --out-dir runs/exp_tri2p5d \
     "$@"
 
 echo "作业 $SLURM_JOB_ID 结束"
