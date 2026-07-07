@@ -1,0 +1,59 @@
+# ============================================================
+# ImageCAS 冠脉分割 - 优化配置 (SegResNet + clDice + TTA + 后处理)
+# 改实验只改这里, 不动代码. 用 --config 指向别的 yaml 可覆盖.
+# ============================================================
+
+project_name: coronary-seg
+seed: 42
+
+data:
+  data_root: ""                  # 用 --data_root 覆盖, 或留空(split.json 内是绝对路径)
+  split_json: splits/split.json
+  cache_rate: 0.0
+  num_workers: 8
+
+preprocess:
+  a_min: -200.0
+  a_max: 800.0
+  clip: true
+  target_spacing: [0.5, 0.5, 0.5]
+  patch_size: [128, 128, 128]
+
+train:
+  max_epochs: 250                # 一个4天作业内可跑完整个余弦退火 (~16min/epoch x250 ≈ 67h)
+  batch_size: 2                  # SegResNet 较重; A100 80G 若显存富余可试 4
+  samples_per_image: 2
+  pos_ratio: 0.8
+  lr: 0.0002
+  weight_decay: 0.00001
+  amp: true
+  val_interval: 5
+  grad_clip: 12.0
+
+model:
+  name: segresnet                # unet | segresnet
+  in_channels: 1
+  out_channels: 2
+  # --- SegResNet 参数 ---
+  init_filters: 32
+  blocks_down: [1, 2, 2, 4]
+  blocks_up: [1, 1, 1]
+  dropout: 0.0
+  # --- UNet 参数 (切回 name=unet 时用) ---
+  channels: [16, 32, 64, 128, 256]
+  strides: [2, 2, 2, 2]
+  num_res_units: 2
+
+loss:
+  name: dice_ce_cldice           # dice_ce | dice_ce_cldice
+  cldice_weight: 0.5             # 总损失 = DiceCE + 0.5*clDice
+  cldice_iters: 3
+
+infer:
+  sw_batch_size: 4
+  overlap: 0.5
+  tta: true                      # 8 向翻转平均 (更准, 推理慢 8 倍)
+  min_component_voxels: 30       # 删除 <30 体素的连通域 (去碎片), 0=关闭
+
+output:
+  work_dir: runs/exp_segresnet   # 新目录, 不覆盖旧的 exp_a100

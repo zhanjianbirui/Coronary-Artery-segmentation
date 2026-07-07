@@ -1,0 +1,10 @@
+# 核心 (torch 单独装, 见 README: 用 cu124 wheel)
+# pip install torch --index-url https://download.pytorch.org/whl/cu124
+monai>=1.3
+nibabel>=5.0
+numpy>=1.24
+scipy>=1.10
+PyYAML>=6.0
+tqdm>=4.65
+kagglehub>=0.3      # 仅 prepare_data.py 下载数据时需要
+tensorboard>=2.14   # 可选: 可视化训练曲线
