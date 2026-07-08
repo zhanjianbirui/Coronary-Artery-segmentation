@@ -1,2 +1,5 @@
 .DS_Store
 **/.DS_Store
+
+# Claude 知识库（本地使用，不提交）
+.kb/
