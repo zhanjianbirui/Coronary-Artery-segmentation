@@ -242,7 +242,8 @@ def predict_prob_axis(model, img, k, axis, device, batch=16,
 
     H, W, D = img.shape
     n = img.shape[axis]                 # 沿该轴的层数 = center 的取值范围
-    prob_vol = np.zeros((H, W, D), dtype=np.float32)
+    # 概率体用 float16 存，内存减半（三轴三体是 OOM 主因）
+    prob_vol = np.zeros((H, W, D), dtype=np.float16)
 
     centers = list(range(n))
     for start in range(0, n, batch):
@@ -251,7 +252,7 @@ def predict_prob_axis(model, img, k, axis, device, batch=16,
         xb = torch.stack(stacks).float().to(device)      # (b,2k+1,A,B)
         probs = _infer_prob_tta(model, xb, device, use_tta).cpu().numpy()
         for j, c in enumerate(cc):
-            _scatter_slice(prob_vol, probs[j], axis, c)
+            _scatter_slice(prob_vol, probs[j].astype(np.float16), axis, c)
     return prob_vol
 
 
@@ -271,12 +272,22 @@ def predict_tri_probs(model, image3d, k, device, axes=(0, 1, 2),
 
 
 def fuse_probs(prob_dict, method):
-    """把三个方向的概率体融合成一个。method: 'mean' | 'max'。"""
-    stack = np.stack(list(prob_dict.values()), axis=0)    # (n_ax,H,W,D)
+    """
+    把三个方向的概率体融合成一个 float32 体。method: 'mean' | 'max'。
+    逐对累加/取max，不一次性 stack 成 (3,H,W,D)，把峰值内存压到单体量级。
+    """
+    vols = list(prob_dict.values())
     if method == "mean":
-        return stack.mean(axis=0)
+        acc = np.zeros_like(vols[0], dtype=np.float32)
+        for v in vols:
+            acc += v.astype(np.float32)
+        acc /= len(vols)
+        return acc
     elif method == "max":
-        return stack.max(axis=0)                          # noisy-OR 的上界近似
+        acc = vols[0].astype(np.float32).copy()
+        for v in vols[1:]:
+            np.maximum(acc, v.astype(np.float32), out=acc)
+        return acc
     else:
         raise ValueError(f"未知融合方式: {method}")
 
@@ -335,86 +346,119 @@ def select_case_indices(test_rec, case_ids, extra_cases, max_cases):
 def run_sweep(model, cache, test_rec, idxs, args, device):
     methods = ["mean", "max"]
     thr_grid = args.thr_grid
-    # 累加器： (method, thr) -> list of per-case metric dict（用 raw，聚焦融合本身）
-    agg = {(m, t): [] for m in methods for t in thr_grid}
-    per_case_rows = []
+    # 累加器： (method, thr, stage) -> list，stage ∈ {raw, pp}
+    stages = ["raw", "pp"]
+    agg = {(m, t, s): [] for m in methods for t in thr_grid for s in stages}
 
+    # csv 增量写，防中断丢数据
+    os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
+    fh = open(args.out_csv, "w", newline="")
+    writer = None
+
+    def _write(row):
+        nonlocal writer
+        if writer is None:
+            writer = csv.DictWriter(fh, fieldnames=list(row.keys()))
+            writer.writeheader()
+        writer.writerow(row)
+        fh.flush()
+
+    done = []
     for rank, ci in enumerate(idxs):
         cid = _case_id(test_rec[ci], ci)
-        vol = cache[ci]
-        image3d = np.asarray(vol["image"])                 # (1,H,W,D)
-        gt = np.asarray(vol["label"])[0].astype(np.uint8)  # (H,W,D)
+        try:
+            vol = cache[ci]
+            image3d = np.asarray(vol["image"])                 # (1,H,W,D)
+            gt = np.asarray(vol["label"])[0].astype(np.uint8)  # (H,W,D)
 
-        # 三轴各推一遍（大头，只做一次）
-        prob_dict = predict_tri_probs(
-            model, image3d, args.k, device, axes=tuple(args.axes),
-            batch=args.batch, pad_multiple=args.pad_multiple, use_tta=args.tta)
+            # 三轴各推一遍（大头，只做一次）
+            prob_dict = predict_tri_probs(
+                model, image3d, args.k, device, axes=tuple(args.axes),
+                batch=args.batch, pad_multiple=args.pad_multiple,
+                use_tta=args.tta)
 
-        print(f"[{rank+1}/{len(idxs)}] case {cid}  三轴推理完成，扫融合×阈值...")
+            b0_line = f"    case {cid} B0err(pp):  "
+            for m in methods:
+                fused = fuse_probs(prob_dict, m)               # float32 (H,W,D)
+                b0_show = []
+                for t in thr_grid:
+                    pred_raw = (fused > t).astype(np.uint8)
+                    # 后处理：只做去小连通分量（min_voxels），聚焦融合+清FP后的连通性
+                    pred_pp = remove_small_components(pred_raw, args.min_voxels)
+                    for stage, pred in (("raw", pred_raw), ("pp", pred_pp)):
+                        met = evaluate_case(pred, gt)
+                        agg[(m, t, stage)].append(met)
+                        _write({"id": cid, "fuse": m, "thr": t, "stage": stage,
+                                "dice": met["dice"], "cldice": met["cldice"],
+                                "betti0_err": met["betti0_err"],
+                                "n_pred": met["n_pred"], "n_gt": met["n_gt"],
+                                "hd95": met["hd95"]})
+                    b0_show.append(f"{t:.2f}:{agg[(m,t,'pp')][-1]['betti0_err']}")
+                    del pred_raw, pred_pp
+                del fused
+                b0_line += f"[{m}] " + " ".join(b0_show) + "  "
+            del prob_dict
+            done.append(ci)
+            print(f"[{rank+1}/{len(idxs)}] case {cid} 完成")
+            print(b0_line)
+        except Exception as e:
+            print(f"[{rank+1}/{len(idxs)}] case {cid} 出错，跳过：{repr(e)}")
+            continue
 
-        for m in methods:
-            fused = fuse_probs(prob_dict, m)               # (H,W,D) float
-            for t in thr_grid:
-                pred = (fused > t).astype(np.uint8)
-                met = evaluate_case(pred, gt)
-                agg[(m, t)].append(met)
-                per_case_rows.append({
-                    "id": cid, "fuse": m, "thr": t,
-                    "dice": met["dice"], "cldice": met["cldice"],
-                    "betti0_err": met["betti0_err"],
-                    "n_pred": met["n_pred"], "n_gt": met["n_gt"],
-                    "hd95": met["hd95"]})
+    fh.close()
+    if not done:
+        print("没有成功评估的 case。")
+        return
 
-        # 逐 case 打印各方案的 B0err，肉眼确认 931/728/630 有没有被桥接
-        line = f"    case {cid} B0err:  "
-        for m in methods:
-            b0s = [f"{t:.2f}:{evaluate_case((fuse_probs(prob_dict,m)>t).astype(np.uint8),gt)[0] if False else agg[(m,t)][-1]['betti0_err']}"
-                   for t in thr_grid]
-            line += f"[{m}] " + " ".join(b0s) + "  "
-        print(line)
-
-    # ---- 写逐 case 明细 csv ----
-    os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
-    with open(args.out_csv, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(per_case_rows[0].keys()))
-        w.writeheader()
-        w.writerows(per_case_rows)
-
-    # ---- 汇总表：均值 ----
-    print("\n" + "=" * 78)
-    print("  扫描汇总（子集均值，raw 无后处理，聚焦融合本身）")
-    print("  子集 case:", ", ".join(_case_id(test_rec[i], i) for i in idxs))
-    print("=" * 78)
-    header = f"  {'fuse':<5} {'thr':>5} | {'Dice':>7} {'clDice':>7} {'B0err':>7} {'HD95':>8}"
+    # ---- 汇总表：raw 和 pp 并排 ----
+    print("\n" + "=" * 92)
+    print("  扫描汇总（子集均值）  min_voxels(pp)=%d" % args.min_voxels)
+    print("  子集 case:", ", ".join(_case_id(test_rec[i], i) for i in done))
+    print("=" * 92)
+    header = (f"  {'fuse':<5} {'thr':>5} | "
+              f"{'Dice(raw)':>9} {'clD(raw)':>8} {'B0(raw)':>8} | "
+              f"{'Dice(pp)':>8} {'clD(pp)':>8} {'B0(pp)':>7} {'HD95(pp)':>9}")
     print(header)
     print("  " + "-" * (len(header) - 2))
-    summary_rows = []
+
+    def _mean(m, t, s, key):
+        xs = [x[key] for x in agg[(m, t, s)]
+              if not (isinstance(x[key], float) and np.isnan(x[key]))]
+        return np.mean(xs) if xs else float("nan")
+
+    summary = []
     for m in methods:
         for t in thr_grid:
-            ms = agg[(m, t)]
-            d = np.mean([x["dice"] for x in ms])
-            cl = np.mean([x["cldice"] for x in ms])
-            b0 = np.mean([x["betti0_err"] for x in ms])
-            hvals = [x["hd95"] for x in ms if not np.isnan(x["hd95"])]
-            h = np.mean(hvals) if hvals else float("nan")
-            print(f"  {m:<5} {t:>5.2f} | {d:>7.4f} {cl:>7.4f} {b0:>7.2f} {h:>8.2f}")
-            summary_rows.append({"fuse": m, "thr": t, "dice": d,
-                                 "cldice": cl, "betti0_err": b0, "hd95": h})
+            row = {
+                "fuse": m, "thr": t,
+                "dice_raw": _mean(m, t, "raw", "dice"),
+                "cldice_raw": _mean(m, t, "raw", "cldice"),
+                "b0_raw": _mean(m, t, "raw", "betti0_err"),
+                "dice_pp": _mean(m, t, "pp", "dice"),
+                "cldice_pp": _mean(m, t, "pp", "cldice"),
+                "b0_pp": _mean(m, t, "pp", "betti0_err"),
+                "hd95_pp": _mean(m, t, "pp", "hd95"),
+            }
+            summary.append(row)
+            print(f"  {m:<5} {t:>5.2f} | "
+                  f"{row['dice_raw']:>9.4f} {row['cldice_raw']:>8.4f} "
+                  f"{row['b0_raw']:>8.2f} | "
+                  f"{row['dice_pp']:>8.4f} {row['cldice_pp']:>8.4f} "
+                  f"{row['b0_pp']:>7.2f} {row['hd95_pp']:>9.2f}")
         print("  " + "-" * (len(header) - 2))
 
-    # 推荐：clDice 最高 + Betti0 最低的折中（先按 clDice 排，再看 B0）
-    best_cl = max(summary_rows, key=lambda r: r["cldice"])
-    best_b0 = min(summary_rows, key=lambda r: r["betti0_err"])
-    print(f"\n  clDice 最高:  fuse={best_cl['fuse']} thr={best_cl['thr']:.2f} "
-          f"→ clDice={best_cl['cldice']:.4f} B0err={best_cl['betti0_err']:.2f} "
-          f"Dice={best_cl['dice']:.4f}")
-    print(f"  Betti0 最低:  fuse={best_b0['fuse']} thr={best_b0['thr']:.2f} "
-          f"→ B0err={best_b0['betti0_err']:.2f} clDice={best_b0['cldice']:.4f} "
-          f"Dice={best_b0['dice']:.4f}")
-    print(f"\n  对比单轴 baseline（全量 200 例）: clDice=0.8670  Betti0=3.68  "
-          f"HD95=23.66  Dice=0.8027")
-    print("  注意：以上是小子集、raw、且含 931/728/630，数值会偏难，"
-          "别直接和 200 例均值比绝对值；看的是 mean vs max 的相对趋势。")
+    # 以后处理后的指标做推荐（这才是最终形态）
+    best_cl = max(summary, key=lambda r: r["cldice_pp"])
+    best_b0 = min(summary, key=lambda r: r["b0_pp"])
+    print(f"\n  [按后处理后指标推荐]")
+    print(f"  clDice(pp) 最高:  fuse={best_cl['fuse']} thr={best_cl['thr']:.2f} "
+          f"→ clDice={best_cl['cldice_pp']:.4f} B0={best_cl['b0_pp']:.2f} "
+          f"Dice={best_cl['dice_pp']:.4f}")
+    print(f"  Betti0(pp) 最低:  fuse={best_b0['fuse']} thr={best_b0['thr']:.2f} "
+          f"→ B0={best_b0['b0_pp']:.2f} clDice={best_b0['cldice_pp']:.4f} "
+          f"Dice={best_b0['dice_pp']:.4f}")
+    print(f"\n  单轴 baseline（全量200例，仅供量级参考，勿直接比）: "
+          f"clDice=0.8670 Betti0=3.68 HD95=23.66 Dice=0.8027")
     print(f"\n  逐 case 明细已存: {args.out_csv}")
 
 
