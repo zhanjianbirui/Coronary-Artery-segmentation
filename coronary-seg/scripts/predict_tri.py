@@ -46,6 +46,9 @@ scripts/predict_tri.py — 三正交方向 2.5D 推理 + 概率融合 + 拓扑�
       --max-cases 0 --pad-multiple 32
 """
 
+from src.data import build_preprocess, load_split
+from src.model import build_model
+from monai.data import PersistentDataset
 import os
 import sys
 import csv
@@ -58,9 +61,6 @@ from skimage.morphology import skeletonize
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from monai.data import PersistentDataset
-from src.model import build_model
-from src.data import build_preprocess, load_split
 
 # smart_reconnect 可选：全量模式若用 --smart 才需要；扫描模式默认不用
 try:
@@ -88,7 +88,8 @@ def cldice_coef(pred, gt, eps=1e-6):
         return 0.0
     skel_pred = skeletonize(pred)
     skel_gt = skeletonize(gt)
-    tprec = (np.logical_and(skel_pred, gt).sum() + eps) / (skel_pred.sum() + eps)
+    tprec = (np.logical_and(skel_pred, gt).sum() + eps) / \
+        (skel_pred.sum() + eps)
     tsens = (np.logical_and(skel_gt, pred).sum() + eps) / (skel_gt.sum() + eps)
     return 2 * tprec * tsens / (tprec + tsens + eps)
 
@@ -156,7 +157,8 @@ def postprocess(mask, min_voxels=200, max_gap=0, smart=False,
                 smart_L=8, smart_align=0.5):
     m = remove_small_components(mask, min_voxels)
     if smart and max_gap > 0 and _HAS_SMART:
-        m = smart_reconnect(m, max_gap=max_gap, L=smart_L, align_thr=smart_align)
+        m = smart_reconnect(m, max_gap=max_gap, L=smart_L,
+                            align_thr=smart_align)
         m = remove_small_components(m, max(30, min_voxels // 5))
     elif max_gap > 0:
         m = reconnect_endpoints(m, max_gap)
@@ -261,6 +263,7 @@ def predict_tri_probs(model, image3d, k, device, axes=(0, 1, 2),
     """
     对一个体块，三个方向各推一遍，返回 dict{axis: prob_vol(H,W,D)}。
     image3d: (1,H,W,D) 预处理后的体块。
+    注意：会同时保留 len(axes) 个概率体，内存吃紧时用 predict_tri_fused。
     """
     img = torch.as_tensor(np.asarray(image3d))[0]         # (H,W,D)
     probs = {}
@@ -271,10 +274,52 @@ def predict_tri_probs(model, image3d, k, device, axes=(0, 1, 2),
     return probs
 
 
+def predict_tri_fused(model, image3d, k, device, axes=(0, 1, 2),
+                      methods=("mean", "max"), batch=16,
+                      pad_multiple=32, use_tta=False):
+    """
+    逐轴推理 + 即时融合，返回 dict{method: fused_vol(H,W,D) float32}。
+    关键：任一时刻内存里只有「当前轴的 1 个 float16 概率体 + 每种 method 的
+    1 个 float32 累加器」，绝不同时保留三个概率体，峰值内存约为
+    predict_tri_probs 的 1/3，这是解决推理阶段 OOM 的核心。
+    """
+    img = torch.as_tensor(np.asarray(image3d))[0]         # (H,W,D)
+    H, W, D = img.shape
+
+    want_mean = "mean" in methods
+    want_max = "max" in methods
+    sum_acc = np.zeros((H, W, D), dtype=np.float32) if want_mean else None
+    max_acc = None
+    n_ax = 0
+
+    for axis in axes:
+        pv = predict_prob_axis(                            # float16 (H,W,D)
+            model, img, k, axis, device, batch=batch,
+            pad_multiple=pad_multiple, use_tta=use_tta)
+        pv32 = pv.astype(np.float32)                       # 临时升精度做累加
+        if want_mean:
+            sum_acc += pv32
+        if want_max:
+            if max_acc is None:
+                max_acc = pv32.copy()
+            else:
+                np.maximum(max_acc, pv32, out=max_acc)
+        n_ax += 1
+        del pv, pv32                                       # 立刻释放，不留三体
+
+    out = {}
+    if want_mean:
+        out["mean"] = sum_acc / max(1, n_ax)
+    if want_max:
+        out["max"] = max_acc
+    return out
+
+
 def fuse_probs(prob_dict, method):
     """
     把三个方向的概率体融合成一个 float32 体。method: 'mean' | 'max'。
     逐对累加/取max，不一次性 stack 成 (3,H,W,D)，把峰值内存压到单体量级。
+    （保留此函数供 predict_tri_probs 路径复用；内存吃紧走 predict_tri_fused。）
     """
     vols = list(prob_dict.values())
     if method == "mean":
@@ -371,20 +416,21 @@ def run_sweep(model, cache, test_rec, idxs, args, device):
             image3d = np.asarray(vol["image"])                 # (1,H,W,D)
             gt = np.asarray(vol["label"])[0].astype(np.uint8)  # (H,W,D)
 
-            # 三轴各推一遍（大头，只做一次）
-            prob_dict = predict_tri_probs(
+            # 三轴逐轴推理 + 即时融合（内存友好，避免 OOM）
+            fused_all = predict_tri_fused(
                 model, image3d, args.k, device, axes=tuple(args.axes),
-                batch=args.batch, pad_multiple=args.pad_multiple,
-                use_tta=args.tta)
+                methods=tuple(methods), batch=args.batch,
+                pad_multiple=args.pad_multiple, use_tta=args.tta)
 
             b0_line = f"    case {cid} B0err(pp):  "
             for m in methods:
-                fused = fuse_probs(prob_dict, m)               # float32 (H,W,D)
+                fused = fused_all[m]                          # float32 (H,W,D)
                 b0_show = []
                 for t in thr_grid:
                     pred_raw = (fused > t).astype(np.uint8)
                     # 后处理：只做去小连通分量（min_voxels），聚焦融合+清FP后的连通性
-                    pred_pp = remove_small_components(pred_raw, args.min_voxels)
+                    pred_pp = remove_small_components(
+                        pred_raw, args.min_voxels)
                     for stage, pred in (("raw", pred_raw), ("pp", pred_pp)):
                         met = evaluate_case(pred, gt)
                         agg[(m, t, stage)].append(met)
@@ -393,11 +439,12 @@ def run_sweep(model, cache, test_rec, idxs, args, device):
                                 "betti0_err": met["betti0_err"],
                                 "n_pred": met["n_pred"], "n_gt": met["n_gt"],
                                 "hd95": met["hd95"]})
-                    b0_show.append(f"{t:.2f}:{agg[(m,t,'pp')][-1]['betti0_err']}")
+                    b0_show.append(
+                        f"{t:.2f}:{agg[(m,t,'pp')][-1]['betti0_err']}")
                     del pred_raw, pred_pp
                 del fused
                 b0_line += f"[{m}] " + " ".join(b0_show) + "  "
-            del prob_dict
+            del fused_all
             done.append(ci)
             print(f"[{rank+1}/{len(idxs)}] case {cid} 完成")
             print(b0_line)
@@ -487,7 +534,8 @@ def run_full(model, cache, test_rec, idxs, args, device):
     def _append(row):
         nonlocal fh, writer
         if fh is None:
-            new = (not os.path.isfile(out_csv)) or os.path.getsize(out_csv) == 0
+            new = (not os.path.isfile(out_csv)
+                   ) or os.path.getsize(out_csv) == 0
             fh = open(out_csv, "a", newline="")
             writer = csv.DictWriter(fh, fieldnames=list(row.keys()))
             if new:
@@ -505,10 +553,12 @@ def run_full(model, cache, test_rec, idxs, args, device):
         image3d = np.asarray(vol["image"])
         gt = np.asarray(vol["label"])[0].astype(np.uint8)
 
-        prob_dict = predict_tri_probs(
+        # 逐轴即时融合，只算需要的那一种 method，内存最省
+        fused_all = predict_tri_fused(
             model, image3d, args.k, device, axes=tuple(args.axes),
-            batch=args.batch, pad_multiple=args.pad_multiple, use_tta=args.tta)
-        fused = fuse_probs(prob_dict, args.fixed_fuse)
+            methods=(args.fixed_fuse,), batch=args.batch,
+            pad_multiple=args.pad_multiple, use_tta=args.tta)
+        fused = fused_all[args.fixed_fuse]
         pred_raw = (fused > args.thr).astype(np.uint8)
         pred_pp = postprocess(pred_raw, args.min_voxels, args.max_gap,
                               smart=args.smart, smart_L=args.smart_l,
@@ -520,6 +570,7 @@ def run_full(model, cache, test_rec, idxs, args, device):
                **{f"raw_{k}": v for k, v in m_raw.items()},
                **{f"pp_{k}": v for k, v in m_pp.items()}}
         _append(row)
+        del fused_all, fused, pred_raw, pred_pp
 
         print(f"[{rank+1}/{len(idxs)}] case {cid}  "
               f"raw: dice={m_raw['dice']:.4f} clDice={m_raw['cldice']:.4f} "
