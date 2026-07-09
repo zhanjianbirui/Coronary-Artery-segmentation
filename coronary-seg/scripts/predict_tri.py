@@ -46,9 +46,6 @@ scripts/predict_tri.py — 三正交方向 2.5D 推理 + 概率融合 + 拓扑�
       --max-cases 0 --pad-multiple 32
 """
 
-from src.data import build_preprocess, load_split
-from src.model import build_model
-from monai.data import PersistentDataset
 import os
 import sys
 import csv
@@ -61,6 +58,9 @@ from skimage.morphology import skeletonize
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from monai.data import PersistentDataset
+from src.model import build_model
+from src.data import build_preprocess, load_split
 
 # smart_reconnect 可选：全量模式若用 --smart 才需要；扫描模式默认不用
 try:
@@ -88,8 +88,7 @@ def cldice_coef(pred, gt, eps=1e-6):
         return 0.0
     skel_pred = skeletonize(pred)
     skel_gt = skeletonize(gt)
-    tprec = (np.logical_and(skel_pred, gt).sum() + eps) / \
-        (skel_pred.sum() + eps)
+    tprec = (np.logical_and(skel_pred, gt).sum() + eps) / (skel_pred.sum() + eps)
     tsens = (np.logical_and(skel_gt, pred).sum() + eps) / (skel_gt.sum() + eps)
     return 2 * tprec * tsens / (tprec + tsens + eps)
 
@@ -157,8 +156,7 @@ def postprocess(mask, min_voxels=200, max_gap=0, smart=False,
                 smart_L=8, smart_align=0.5):
     m = remove_small_components(mask, min_voxels)
     if smart and max_gap > 0 and _HAS_SMART:
-        m = smart_reconnect(m, max_gap=max_gap, L=smart_L,
-                            align_thr=smart_align)
+        m = smart_reconnect(m, max_gap=max_gap, L=smart_L, align_thr=smart_align)
         m = remove_small_components(m, max(30, min_voxels // 5))
     elif max_gap > 0:
         m = reconnect_endpoints(m, max_gap)
@@ -234,10 +232,15 @@ def _scatter_slice(prob_vol, plane, axis, center):
 
 
 def predict_prob_axis(model, img, k, axis, device, batch=16,
-                      pad_multiple=32, use_tta=False):
+                      pad_multiple=32, use_tta=False,
+                      max_px_per_batch=4_000_000):
     """
     沿单个 axis 逐层推理，返回该方向的概率体 (H,W,D) float32（未阈值化）。
     img: (H,W,D) tensor。
+
+    显存安全：不同轴的切片平面大小不同（轴位 H×W，冠状 H×D，矢状 W×D），
+    大平面 × batch 容易爆显存。这里按「单张切片像素数」自动缩小实际 batch，
+    使 (实际batch × 平面像素) 不超过 max_px_per_batch，避免 OOM。
     """
     global _INFER_PAD
     _INFER_PAD = (pad_multiple,)
@@ -247,14 +250,24 @@ def predict_prob_axis(model, img, k, axis, device, batch=16,
     # 概率体用 float16 存，内存减半（三轴三体是 OOM 主因）
     prob_vol = np.zeros((H, W, D), dtype=np.float16)
 
+    # 该轴单张切片的平面尺寸 → 像素数，用于自动限批
+    plane = {2: (H, W), 1: (H, D), 0: (W, D)}[axis]
+    px = plane[0] * plane[1]
+    eff_batch = max(1, min(batch, max_px_per_batch // max(1, px)))
+
     centers = list(range(n))
-    for start in range(0, n, batch):
-        cc = centers[start:start + batch]
+    for start in range(0, n, eff_batch):
+        cc = centers[start:start + eff_batch]
         stacks = [_take_slice_stack(img, axis, c, k, n) for c in cc]
         xb = torch.stack(stacks).float().to(device)      # (b,2k+1,A,B)
         probs = _infer_prob_tta(model, xb, device, use_tta).cpu().numpy()
         for j, c in enumerate(cc):
             _scatter_slice(prob_vol, probs[j].astype(np.float16), axis, c)
+        del xb, probs
+
+    # 每个轴推理完清一次显存碎片，避免跨轴累积导致 OOM
+    if device == "cuda":
+        torch.cuda.empty_cache()
     return prob_vol
 
 
@@ -276,7 +289,8 @@ def predict_tri_probs(model, image3d, k, device, axes=(0, 1, 2),
 
 def predict_tri_fused(model, image3d, k, device, axes=(0, 1, 2),
                       methods=("mean", "max"), batch=16,
-                      pad_multiple=32, use_tta=False):
+                      pad_multiple=32, use_tta=False,
+                      max_px_per_batch=4_000_000):
     """
     逐轴推理 + 即时融合，返回 dict{method: fused_vol(H,W,D) float32}。
     关键：任一时刻内存里只有「当前轴的 1 个 float16 概率体 + 每种 method 的
@@ -295,7 +309,8 @@ def predict_tri_fused(model, image3d, k, device, axes=(0, 1, 2),
     for axis in axes:
         pv = predict_prob_axis(                            # float16 (H,W,D)
             model, img, k, axis, device, batch=batch,
-            pad_multiple=pad_multiple, use_tta=use_tta)
+            pad_multiple=pad_multiple, use_tta=use_tta,
+            max_px_per_batch=max_px_per_batch)
         pv32 = pv.astype(np.float32)                       # 临时升精度做累加
         if want_mean:
             sum_acc += pv32
@@ -389,7 +404,7 @@ def select_case_indices(test_rec, case_ids, extra_cases, max_cases):
 # 扫描模式：一次推理、多方案融合
 # ===============================================================
 def run_sweep(model, cache, test_rec, idxs, args, device):
-    methods = ["mean", "max"]
+    methods = list(args.methods)
     thr_grid = args.thr_grid
     # 累加器： (method, thr, stage) -> list，stage ∈ {raw, pp}
     stages = ["raw", "pp"]
@@ -420,7 +435,8 @@ def run_sweep(model, cache, test_rec, idxs, args, device):
             fused_all = predict_tri_fused(
                 model, image3d, args.k, device, axes=tuple(args.axes),
                 methods=tuple(methods), batch=args.batch,
-                pad_multiple=args.pad_multiple, use_tta=args.tta)
+                pad_multiple=args.pad_multiple, use_tta=args.tta,
+                max_px_per_batch=args.max_px_per_batch)
 
             b0_line = f"    case {cid} B0err(pp):  "
             for m in methods:
@@ -429,8 +445,7 @@ def run_sweep(model, cache, test_rec, idxs, args, device):
                 for t in thr_grid:
                     pred_raw = (fused > t).astype(np.uint8)
                     # 后处理：只做去小连通分量（min_voxels），聚焦融合+清FP后的连通性
-                    pred_pp = remove_small_components(
-                        pred_raw, args.min_voxels)
+                    pred_pp = remove_small_components(pred_raw, args.min_voxels)
                     for stage, pred in (("raw", pred_raw), ("pp", pred_pp)):
                         met = evaluate_case(pred, gt)
                         agg[(m, t, stage)].append(met)
@@ -439,8 +454,7 @@ def run_sweep(model, cache, test_rec, idxs, args, device):
                                 "betti0_err": met["betti0_err"],
                                 "n_pred": met["n_pred"], "n_gt": met["n_gt"],
                                 "hd95": met["hd95"]})
-                    b0_show.append(
-                        f"{t:.2f}:{agg[(m,t,'pp')][-1]['betti0_err']}")
+                    b0_show.append(f"{t:.2f}:{agg[(m,t,'pp')][-1]['betti0_err']}")
                     del pred_raw, pred_pp
                 del fused
                 b0_line += f"[{m}] " + " ".join(b0_show) + "  "
@@ -534,8 +548,7 @@ def run_full(model, cache, test_rec, idxs, args, device):
     def _append(row):
         nonlocal fh, writer
         if fh is None:
-            new = (not os.path.isfile(out_csv)
-                   ) or os.path.getsize(out_csv) == 0
+            new = (not os.path.isfile(out_csv)) or os.path.getsize(out_csv) == 0
             fh = open(out_csv, "a", newline="")
             writer = csv.DictWriter(fh, fieldnames=list(row.keys()))
             if new:
@@ -557,7 +570,8 @@ def run_full(model, cache, test_rec, idxs, args, device):
         fused_all = predict_tri_fused(
             model, image3d, args.k, device, axes=tuple(args.axes),
             methods=(args.fixed_fuse,), batch=args.batch,
-            pad_multiple=args.pad_multiple, use_tta=args.tta)
+            pad_multiple=args.pad_multiple, use_tta=args.tta,
+            max_px_per_batch=args.max_px_per_batch)
         fused = fused_all[args.fixed_fuse]
         pred_raw = (fused > args.thr).astype(np.uint8)
         pred_pp = postprocess(pred_raw, args.min_voxels, args.max_gap,
@@ -630,6 +644,12 @@ def parse_args():
     p.add_argument("--axes", type=int, nargs="+", default=[0, 1, 2],
                    help="参与融合的方向，默认三方向。单轴对照可传 --axes 2")
     p.add_argument("--batch", type=int, default=16)
+    p.add_argument("--max-px-per-batch", type=int, default=4_000_000,
+                   help="单次前向的 batch×平面像素上限，防大切片爆显存；"
+                        "OOM 时调小（如 2000000）")
+    p.add_argument("--methods", type=str, nargs="+", default=["mean"],
+                   choices=["mean", "max"],
+                   help="扫描的融合方式，默认只 mean（max 经验证更差已出局）")
     p.add_argument("--pad-multiple", type=int, default=32)
     p.add_argument("--tta", action="store_true", help="面内 4-way 翻转 TTA")
 
