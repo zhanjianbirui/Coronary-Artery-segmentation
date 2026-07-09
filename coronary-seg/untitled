@@ -1,0 +1,168 @@
+[1/8] case 931 完成
+    case 931 B0err(pp):  [mean] 0.45:9 0.50:9 0.55:11 0.60:11  
+[2/8] case 728 完成
+    case 728 B0err(pp):  [mean] 0.45:12 0.50:11 0.55:11 0.60:11  
+[3/8] case 630 完成
+    case 630 B0err(pp):  [mean] 0.45:12 0.50:12 0.55:11 0.60:10  
+[4/8] case 936 完成
+    case 936 B0err(pp):  [mean] 0.45:5 0.50:4 0.55:4 0.60:3  
+[5/8] case 761 完成q
+    case 761 B0err(pp):  [mean] 0.45:4 0.50:3 0.55:3 0.60:3  
+[6/8] case 764 完成
+    case 764 B0err(pp):  [mean] 0.45:2 0.50:3 0.55:2 0.60:2  
+[7/8] case 1000 完成
+    case 1000 B0err(pp):  [mean] 0.45:6 0.50:5 0.55:6 0.60:6  
+[8/8] case 916 完成
+    case 916 B0err(pp):  [mean] 0.45:2 0.50:2 0.55:2 0.60:1  
+
+============================================================================================
+  扫描汇总（子集均值）  min_voxels(pp)=300
+  子集 case: 931, 728, 630, 936, 761, 764, 1000, 916
+============================================================================================
+  fuse    thr | Dice(raw) clD(raw)  B0(raw) | Dice(pp)  clD(pp)  B0(pp)  HD95(pp)
+  -------------------------------------------------------------------------------
+  mean   0.45 |    0.7258   0.7566    32.75 |   0.7323   0.7758    6.50     48.88
+  mean   0.50 |    0.7295   0.7606    31.62 |   0.7361   0.7790    6.12     48.31
+  mean   0.55 |    0.7317   0.7631    32.12 |   0.7390   0.7856    6.25     47.16
+  mean   0.60 |    0.7324   0.7689    32.88 |   0.7387   0.7883    5.88     46.39
+  -------------------------------------------------------------------------------
+
+  [按后处理后指标推荐]
+  clDice(pp) 最高:  fuse=mean thr=0.60 → clDice=0.7883 B0=5.88 Dice=0.7387
+  Betti0(pp) 最低:  fuse=mean thr=0.60 → B0=5.88 clDice=0.7883 Dice=0.7387
+
+  单轴 baseline（全量200例，仅供量级参考，勿直接比）: clDice=0.8670 Betti0=3.68 HD95=23.66 Dice=0.8027
+
+  逐 case 明细已存: runs/exp_tri/sweep_axes_2.csv
+===== axes=1 2 =====
+device=cuda, ckpt=runs/exp_tri2p5d/best.pth, axes=[1, 2]
+加载 checkpoint（epoch=24, val_dice=0.8075442800608077）
+/mnt/iusers01/fse-ugpgt01/compsci01/z67253xh/scratch/envs/coronary/lib/python3.11/site-packages/monai/utils/deprecate_utils.py:321: FutureWarning: monai.transforms.spatial.dictionary Orientationd.__init__:labels: Current default value of argument `labels=(('L', 'R'), ('P', 'A'), ('I', 'S'))` was changed in version None from `labels=(('L', 'R'), ('P', 'A'), ('I', 'S'))` to `labels=None`. Default value changed to None meaning that the transform now uses the 'space' of a meta-tensor, if applicable, to determine appropriate axis labels.
+  warn_deprecated(argname, msg, warning_category)
+[扫描模式] 子集 8 例
+/mnt/iusers01/fse-ugpgt01/compsci01/z67253xh/scratch/envs/coronary/lib/python3.11/site-packages/monai/utils/deprecate_utils.py:221: FutureWarning: monai.metrics.utils get_mask_edges:always_return_as_numpy: Argument `always_return_as_numpy` has been deprecated since version 1.5.0. It will be removed in version 1.7.0. The option is removed and the return type will always be equal to the input type.
+  warn_deprecated(argname, msg, warning_category)
+[1/8] case 931 完成
+    case 931 B0err(pp):  [mean] 0.45:8 0.50:6 0.55:6 0.60:5  
+[2/8] case 728 完成
+    case 728 B0err(pp):  [mean] 0.45:12 0.50:11 0.55:7 0.60:6  
+[3/8] case 630 完成
+    case 630 B0err(pp):  [mean] 0.45:7 0.50:6 0.55:6 0.60:5  
+[4/8] case 936 完成
+    case 936 B0err(pp):  [mean] 0.45:2 0.50:3 0.55:1 0.60:1  
+[5/8] case 761 完成
+    case 761 B0err(pp):  [mean] 0.45:3 0.50:1 0.55:1 0.60:3  
+[6/8] case 764 完成
+    case 764 B0err(pp):  [mean] 0.45:2 0.50:2 0.55:1 0.60:3  
+[7/8] case 1000 完成
+    case 1000 B0err(pp):  [mean] 0.45:4 0.50:4 0.55:4 0.60:4  
+[8/8] case 916 完成
+    case 916 B0err(pp):  [mean] 0.45:2 0.50:2 0.55:1 0.60:1  
+
+============================================================================================
+  扫描汇总（子集均值）  min_voxels(pp)=300
+  子集 case: 931, 728, 630, 936, 761, 764, 1000, 916
+============================================================================================
+  fuse    thr | Dice(raw) clD(raw)  B0(raw) | Dice(pp)  clD(pp)  B0(pp)  HD95(pp)
+  -------------------------------------------------------------------------------
+  mean   0.45 |    0.7412   0.7788    25.62 |   0.7469   0.7986    5.00     49.02
+  mean   0.50 |    0.7450   0.7876    24.38 |   0.7497   0.8029    4.38     48.47
+  mean   0.55 |    0.7448   0.7876    25.00 |   0.7474   0.8057    3.38     48.39
+  mean   0.60 |    0.7439   0.7901    25.62 |   0.7460   0.8054    3.50     47.62
+  -------------------------------------------------------------------------------
+
+  [按后处理后指标推荐]
+  clDice(pp) 最高:  fuse=mean thr=0.55 → clDice=0.8057 B0=3.38 Dice=0.7474
+  Betti0(pp) 最低:  fuse=mean thr=0.55 → B0=3.38 clDice=0.8057 Dice=0.7474
+
+  单轴 baseline（全量200例，仅供量级参考，勿直接比）: clDice=0.8670 Betti0=3.68 HD95=23.66 Dice=0.8027
+
+  逐 case 明细已存: runs/exp_tri/sweep_axes_1_2.csv
+===== axes=0 2 =====
+device=cuda, ckpt=runs/exp_tri2p5d/best.pth, axes=[0, 2]
+加载 checkpoint（epoch=24, val_dice=0.8075442800608077）
+/mnt/iusers01/fse-ugpgt01/compsci01/z67253xh/scratch/envs/coronary/lib/python3.11/site-packages/monai/utils/deprecate_utils.py:321: FutureWarning: monai.transforms.spatial.dictionary Orientationd.__init__:labels: Current default value of argument `labels=(('L', 'R'), ('P', 'A'), ('I', 'S'))` was changed in version None from `labels=(('L', 'R'), ('P', 'A'), ('I', 'S'))` to `labels=None`. Default value changed to None meaning that the transform now uses the 'space' of a meta-tensor, if applicable, to determine appropriate axis labels.
+  warn_deprecated(argname, msg, warning_category)
+[扫描模式] 子集 8 例
+/mnt/iusers01/fse-ugpgt01/compsci01/z67253xh/scratch/envs/coronary/lib/python3.11/site-packages/monai/utils/deprecate_utils.py:221: FutureWarning: monai.metrics.utils get_mask_edges:always_return_as_numpy: Argument `always_return_as_numpy` has been deprecated since version 1.5.0. It will be removed in version 1.7.0. The option is removed and the return type will always be equal to the input type.
+  warn_deprecated(argname, msg, warning_category)
+[1/8] case 931 完成
+    case 931 B0err(pp):  [mean] 0.45:6 0.50:6 0.55:6 0.60:6  
+[2/8] case 728 完成
+    case 728 B0err(pp):  [mean] 0.45:11 0.50:10 0.55:7 0.60:10  
+[3/8] case 630 完成
+    case 630 B0err(pp):  [mean] 0.45:7 0.50:7 0.55:7 0.60:7  
+[4/8] case 936 完成
+    case 936 B0err(pp):  [mean] 0.45:3 0.50:2 0.55:3 0.60:3  
+[5/8] case 761 完成
+    case 761 B0err(pp):  [mean] 0.45:0 0.50:1 0.55:2 0.60:2  
+[6/8] case 764 完成
+    case 764 B0err(pp):  [mean] 0.45:2 0.50:0 0.55:3 0.60:4  
+[7/8] case 1000 完成
+    case 1000 B0err(pp):  [mean] 0.45:1 0.50:3 0.55:2 0.60:2  
+[8/8] case 916 完成
+    case 916 B0err(pp):  [mean] 0.45:2 0.50:2 0.55:2 0.60:2  
+
+============================================================================================
+  扫描汇总（子集均值）  min_voxels(pp)=300
+  子集 case: 931, 728, 630, 936, 761, 764, 1000, 916
+============================================================================================
+  fuse    thr | Dice(raw) clD(raw)  B0(raw) | Dice(pp)  clD(pp)  B0(pp)  HD95(pp)
+  -------------------------------------------------------------------------------
+  mean   0.45 |    0.7467   0.7886    25.12 |   0.7556   0.8106    4.00     46.35
+  mean   0.50 |    0.7492   0.7903    25.50 |   0.7547   0.8087    3.88     46.75
+  mean   0.55 |    0.7505   0.7968    26.62 |   0.7518   0.8098    4.00     46.23
+  mean   0.60 |    0.7485   0.7950    22.88 |   0.7480   0.7980    4.50     46.33
+  -------------------------------------------------------------------------------
+
+  [按后处理后指标推荐]
+  clDice(pp) 最高:  fuse=mean thr=0.45 → clDice=0.8106 B0=4.00 Dice=0.7556
+  Betti0(pp) 最低:  fuse=mean thr=0.50 → B0=3.88 clDice=0.8087 Dice=0.7547
+
+  单轴 baseline（全量200例，仅供量级参考，勿直接比）: clDice=0.8670 Betti0=3.68 HD95=23.66 Dice=0.8027
+
+  逐 case 明细已存: runs/exp_tri/sweep_axes_0_2.csv
+===== axes=0 1 2 =====
+device=cuda, ckpt=runs/exp_tri2p5d/best.pth, axes=[0, 1, 2]
+加载 checkpoint（epoch=24, val_dice=0.8075442800608077）
+/mnt/iusers01/fse-ugpgt01/compsci01/z67253xh/scratch/envs/coronary/lib/python3.11/site-packages/monai/utils/deprecate_utils.py:321: FutureWarning: monai.transforms.spatial.dictionary Orientationd.__init__:labels: Current default value of argument `labels=(('L', 'R'), ('P', 'A'), ('I', 'S'))` was changed in version None from `labels=(('L', 'R'), ('P', 'A'), ('I', 'S'))` to `labels=None`. Default value changed to None meaning that the transform now uses the 'space' of a meta-tensor, if applicable, to determine appropriate axis labels.
+  warn_deprecated(argname, msg, warning_category)
+[扫描模式] 子集 8 例
+/mnt/iusers01/fse-ugpgt01/compsci01/z67253xh/scratch/envs/coronary/lib/python3.11/site-packages/monai/utils/deprecate_utils.py:221: FutureWarning: monai.metrics.utils get_mask_edges:always_return_as_numpy: Argument `always_return_as_numpy` has been deprecated since version 1.5.0. It will be removed in version 1.7.0. The option is removed and the return type will always be equal to the input type.
+  warn_deprecated(argname, msg, warning_category)
+[1/8] case 931 完成
+    case 931 B0err(pp):  [mean] 0.45:6 0.50:5 0.55:6 0.60:4  
+[2/8] case 728 完成
+    case 728 B0err(pp):  [mean] 0.45:9 0.50:7 0.55:7 0.60:7  
+[3/8] case 630 完成
+    case 630 B0err(pp):  [mean] 0.45:7 0.50:7 0.55:5 0.60:3  
+[4/8] case 936 完成
+    case 936 B0err(pp):  [mean] 0.45:2 0.50:2 0.55:3 0.60:3  
+[5/8] case 761 完成
+    case 761 B0err(pp):  [mean] 0.45:0 0.50:2 0.55:2 0.60:3  
+[6/8] case 764 完成
+    case 764 B0err(pp):  [mean] 0.45:1 0.50:1 0.55:1 0.60:1  
+[7/8] case 1000 完成
+    case 1000 B0err(pp):  [mean] 0.45:2 0.50:2 0.55:1 0.60:2  
+[8/8] case 916 完成
+    case 916 B0err(pp):  [mean] 0.45:2 0.50:0 0.55:0 0.60:1  
+
+============================================================================================
+  扫描汇总（子集均值）  min_voxels(pp)=300
+  子集 case: 931, 728, 630, 936, 761, 764, 1000, 916
+============================================================================================
+  fuse    thr | Dice(raw) clD(raw)  B0(raw) | Dice(pp)  clD(pp)  B0(pp)  HD95(pp)
+  -------------------------------------------------------------------------------
+  mean   0.45 |    0.7549   0.8062    20.12 |   0.7596   0.8264    3.62     47.15
+  mean   0.50 |    0.7578   0.8063    18.12 |   0.7602   0.8219    3.25     46.18
+  mean   0.55 |    0.7582   0.8036    19.50 |   0.7599   0.8127    3.12     44.70
+  mean   0.60 |    0.7562   0.8029    18.25 |   0.7597   0.8197    3.00     44.73
+  -------------------------------------------------------------------------------
+
+  [按后处理后指标推荐]
+  clDice(pp) 最高:  fuse=mean thr=0.45 → clDice=0.8264 B0=3.62 Dice=0.7596
+  Betti0(pp) 最低:  fuse=mean thr=0.60 → B0=3.00 clDice=0.8197 Dice=0.7597
+
+  单轴 baseline（全量200例，仅供量级参考，勿直接比）: clDice=0.8670 Betti0=3.68 HD95=23.66 Dice=0.8027
+
+  逐 case 明细已存: runs/exp_tri/sweep_axes_0_1_2.csv
