@@ -42,7 +42,6 @@ python scripts/train_stage2.py \
     --cldice-k 5 \
     --samples-per-case 16 \
     --num-workers $SLURM_CPUS_PER_TASK \
-    --log-every 50 \
     --out-dir runs/stage2 \
     "$@"
 
