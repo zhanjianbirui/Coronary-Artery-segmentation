@@ -12,13 +12,10 @@ resume + overfit-one-batch），只替换三处：
 再去掉该 flag 上全量。
 
 依赖你的 stage-2 dataloader（返回 {"image":(B,2,P,P,P), "label":(B,1,P,P,P)}）。
-下面从 src.stage2_data 导入 build_stage2_dataloaders；若你的文件/函数名不同，
+下面从 src.stage2_data 导入 build_stage2_loaders；若你的文件/函数名不同，
 改这一行的 import 即可。
 """
 
-from src.stage2_data import build_stage2_dataloaders
-from src.stage2_loss import build_stage2_loss
-from src.stage2_model import build_stage2_model, count_params
 import os
 import sys
 import argparse
@@ -26,21 +23,26 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.stage2_model import build_stage2_model, count_params
+from src.stage2_loss import build_stage2_loss
 
 # 你的 stage-2 数据流水线入口。若函数名不同，改这里。
+from src.stage2_data import build_stage2_loaders
 
 
 def parse_args():
     p = argparse.ArgumentParser()
     # 数据（具体字段按你的 stage2_data 需要；这里透传 cfg）
-    p.add_argument("--data-root", required=True,
-                   help="stage2_prepare 输出的 npz 目录")
+    p.add_argument("--data-dir", required=True,
+                   help="含 train/ val/ 子目录的 npz 根目录")
     p.add_argument("--split-json", default="splits/split.json")
     p.add_argument("--patch-size", type=int, default=128)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--pos-ratio", type=float, default=0.8,
                    help="含前景 patch 的采样比例")
+    p.add_argument("--samples-per-case", type=int, default=16,
+                   help="每个病例采样多少个 patch")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--max-cases", type=int, default=0)
     # 模型
@@ -60,8 +62,6 @@ def parse_args():
     p.add_argument("--weight-decay", type=float, default=1e-5)
     p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--out-dir", default="runs/stage2")
-    p.add_argument("--log-every", type=int, default=50,
-                   help="每多少个 batch 打印一次训练进度")
     p.add_argument("--no-amp", action="store_true")
     # sanity
     p.add_argument("--overfit-one-batch", action="store_true")
@@ -144,14 +144,11 @@ def validate(model, loader, loss_fn, device, use_amp):
 
 
 def train_one_epoch(model, loader, loss_fn, opt, device, scaler,
-                    use_amp, grad_clip, epoch=0, epochs=0, log_every=50):
-    import time
+                    use_amp, grad_clip):
     model.train()
     tot = 0.0
     n = 0
-    n_batches = len(loader)
-    t0 = time.time()
-    for bi, batch in enumerate(loader):
+    for batch in loader:
         x = batch["image"].to(device)
         y = batch["label"].to(device)
         opt.zero_grad(set_to_none=True)
@@ -173,30 +170,13 @@ def train_one_epoch(model, loader, loss_fn, opt, device, scaler,
             opt.step()
         tot += loss.item()
         n += 1
-
-        if (bi + 1) % log_every == 0 or (bi + 1) == n_batches:
-            elapsed = time.time() - t0
-            rate = (bi + 1) / max(elapsed, 1e-6)          # batch/s
-            eta = (n_batches - bi - 1) / max(rate, 1e-6)  # 剩余秒
-            with torch.no_grad():
-                pred = (torch.sigmoid(logits.float()) > 0.5).float()
-                inter = (pred * y).sum()
-                dice = (2 * inter / (pred.sum() + y.sum() + 1e-6)).item()
-            print(f"    E{epoch+1}/{epochs} "
-                  f"[{bi+1:>4}/{n_batches}] "
-                  f"loss={loss.item():.4f} "
-                  f"(reg={parts['region']:.4f} cl={parts['cldice']:.4f}) "
-                  f"dice={dice:.3f} "
-                  f"{rate:.2f}b/s ETA={eta/60:.1f}min",
-                  flush=True)
     return tot / max(1, n)
 
 
 def full_train(model, train_loader, val_loader, loss_fn, device, cfg, use_amp):
     opt = torch.optim.AdamW(model.parameters(), lr=cfg["lr"],
                             weight_decay=cfg["weight_decay"])
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(
-        opt, T_max=cfg["epochs"])
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg["epochs"])
     # bfloat16 AMP 不需要 GradScaler；保持 None
     scaler = None
     os.makedirs(cfg["out_dir"], exist_ok=True)
@@ -217,9 +197,7 @@ def full_train(model, train_loader, val_loader, loss_fn, device, cfg, use_amp):
         print(f"\n--- Epoch {epoch+1}/{cfg['epochs']} "
               f"(lr={opt.param_groups[0]['lr']:.2e}) ---")
         tr = train_one_epoch(model, train_loader, loss_fn, opt, device,
-                             scaler, use_amp, cfg.get("grad_clip", 1.0),
-                             epoch=epoch, epochs=cfg["epochs"],
-                             log_every=cfg.get("log_every", 50))
+                             scaler, use_amp, cfg.get("grad_clip", 1.0))
         vl, vd = validate(model, val_loader, loss_fn, device, use_amp)
         sched.step()
         print(f"  train_loss={tr:.4f}  val_loss={vl:.4f}  val_dice={vd:.4f}")
@@ -252,7 +230,7 @@ def main():
     print(f"loss: w_region={cfg['w_region']} w_cldice={cfg['w_cldice']} "
           f"cldice_k={cfg['cldice_k']} warmup={cfg['cldice_warmup']}")
 
-    train_loader, val_loader = build_stage2_dataloaders(cfg)
+    train_loader, val_loader = build_stage2_loaders(cfg)
     print(f"train batches={len(train_loader)}  val batches={len(val_loader)}")
 
     if args.overfit_one_batch:
