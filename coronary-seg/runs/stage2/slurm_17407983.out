@@ -1,0 +1,63 @@
+作业 17407983 在 host.cluster.example.org 启动
+CUDA: True NVIDIA A100-SXM4-80GB
+device=cuda  amp=True
+stage-2 残差门控网络  参数量=4,701,618  gate=True
+loss: w_region=1.0 w_cldice=0.5 cldice_k=5 warmup=500
+train batches=2800  val batches=200
+
+--- Epoch 1/80 (lr=3.00e-04) ---
+Traceback (most recent call last):
+  File "/path/to/coronary-seg/scripts/train_stage2.py", line 245, in <module>
+    main()
+  File "/path/to/coronary-seg/scripts/train_stage2.py", line 240, in main
+    full_train(model, train_loader, val_loader, loss_fn, device,
+  File "/path/to/coronary-seg/scripts/train_stage2.py", line 199, in full_train
+    tr = train_one_epoch(model, train_loader, loss_fn, opt, device,
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/path/to/coronary-seg/scripts/train_stage2.py", line 151, in train_one_epoch
+    for batch in loader:
+  File "/path/to/env/coronary/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 708, in __next__
+    data = self._next_data()
+           ^^^^^^^^^^^^^^^^^
+  File "/path/to/env/coronary/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 1455, in _next_data
+    return self._process_data(data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/path/to/env/coronary/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 1505, in _process_data
+    data.reraise()
+  File "/path/to/env/coronary/lib/python3.11/site-packages/torch/_utils.py", line 733, in reraise
+    raise exception
+zlib.error: Caught error in DataLoader worker process 1.
+Original Traceback (most recent call last):
+  File "/path/to/env/coronary/lib/python3.11/site-packages/torch/utils/data/_utils/worker.py", line 349, in _worker_loop
+    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/path/to/env/coronary/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 52, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/path/to/env/coronary/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 52, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+            ~~~~~~~~~~~~^^^^^
+  File "/path/to/coronary-seg/src/stage2_data.py", line 90, in __getitem__
+    img, prob, lab = self._load(fpath)
+                     ^^^^^^^^^^^^^^^^^
+  File "/path/to/coronary-seg/src/stage2_data.py", line 48, in _load
+    prob = d["prob"].astype(np.float32)
+           ~^^^^^^^^
+  File "/path/to/env/coronary/lib/python3.11/site-packages/numpy/lib/_npyio_impl.py", line 257, in __getitem__
+    return format.read_array(
+           ^^^^^^^^^^^^^^^^^^
+  File "/path/to/env/coronary/lib/python3.11/site-packages/numpy/lib/_format_impl.py", line 869, in read_array
+    data = _read_bytes(fp, read_size, "array data")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/path/to/env/coronary/lib/python3.11/site-packages/numpy/lib/_format_impl.py", line 1013, in _read_bytes
+    r = fp.read(size - len(data))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/path/to/env/coronary/lib/python3.11/zipfile.py", line 982, in read
+    data = self._read1(n)
+           ^^^^^^^^^^^^^^
+  File "/path/to/env/coronary/lib/python3.11/zipfile.py", line 1058, in _read1
+    data = self._decompressor.decompress(data, n)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+zlib.error: Error -3 while decompressing data: invalid distance code
+
+作业 17407983 结束

@@ -1,0 +1,218 @@
+device=cuda, ckpt=runs/exp_tri2p5d/best.pth, axes=[0, 1, 2]
+加载 checkpoint（epoch=36, val_dice=0.8105608913514072）
+[全量模式] 200 例，融合=mean thr=0.5
+[续跑] 已有 csv，87 个病例已完成，将跳过
+[1/200] case 936 已完成，跳过
+[2/200] case 761 已完成，跳过
+[3/200] case 764 已完成，跳过
+[4/200] case 1000 已完成，跳过
+[5/200] case 916 已完成，跳过
+[6/200] case 243 已完成，跳过
+[7/200] case 5 已完成，跳过
+[8/200] case 937 已完成，跳过
+[9/200] case 998 已完成，跳过
+[10/200] case 959 已完成，跳过
+[11/200] case 69 已完成，跳过
+[12/200] case 807 已完成，跳过
+[13/200] case 908 已完成，跳过
+[14/200] case 790 已完成，跳过
+[15/200] case 941 已完成，跳过
+[16/200] case 727 已完成，跳过
+[17/200] case 203 已完成，跳过
+[18/200] case 763 已完成，跳过
+[19/200] case 846 已完成，跳过
+[20/200] case 108 已完成，跳过
+[21/200] case 608 已完成，跳过
+[22/200] case 33 已完成，跳过
+[23/200] case 586 已完成，跳过
+[24/200] case 53 已完成，跳过
+[25/200] case 966 已完成，跳过
+[26/200] case 45 已完成，跳过
+[27/200] case 453 已完成，跳过
+[28/200] case 157 已完成，跳过
+[29/200] case 648 已完成，跳过
+[30/200] case 96 已完成，跳过
+[31/200] case 725 已完成，跳过
+[32/200] case 829 已完成，跳过
+[33/200] case 961 已完成，跳过
+[34/200] case 677 已完成，跳过
+[35/200] case 239 已完成，跳过
+[36/200] case 2 已完成，跳过
+[37/200] case 141 已完成，跳过
+[38/200] case 795 已完成，跳过
+[39/200] case 182 已完成，跳过
+[40/200] case 553 已完成，跳过
+[41/200] case 568 已完成，跳过
+[42/200] case 225 已完成，跳过
+[43/200] case 892 已完成，跳过
+[44/200] case 931 已完成，跳过
+[45/200] case 466 已完成，跳过
+[46/200] case 636 已完成，跳过
+[47/200] case 493 已完成，跳过
+[48/200] case 637 已完成，跳过
+[49/200] case 787 已完成，跳过
+[50/200] case 340 已完成，跳过
+[51/200] case 595 已完成，跳过
+[52/200] case 976 已完成，跳过
+[53/200] case 785 已完成，跳过
+[54/200] case 325 已完成，跳过
+[55/200] case 992 已完成，跳过
+[56/200] case 342 已完成，跳过
+[57/200] case 23 已完成，跳过
+[58/200] case 520 已完成，跳过
+[59/200] case 691 已完成，跳过
+[60/200] case 463 已完成，跳过
+[61/200] case 559 已完成，跳过
+[62/200] case 702 已完成，跳过
+[63/200] case 294 已完成，跳过
+[64/200] case 389 已完成，跳过
+[65/200] case 760 已完成，跳过
+[66/200] case 620 已完成，跳过
+[67/200] case 293 已完成，跳过
+[68/200] case 159 已完成，跳过
+[69/200] case 345 已完成，跳过
+[70/200] case 468 已完成，跳过
+[71/200] case 39 已完成，跳过
+[72/200] case 840 已完成，跳过
+[73/200] case 983 已完成，跳过
+[74/200] case 856 已完成，跳过
+[75/200] case 309 已完成，跳过
+[76/200] case 15 已完成，跳过
+[77/200] case 813 已完成，跳过
+[78/200] case 806 已完成，跳过
+[79/200] case 876 已完成，跳过
+[80/200] case 398 已完成，跳过
+[81/200] case 73 已完成，跳过
+[82/200] case 30 已完成，跳过
+[83/200] case 611 已完成，跳过
+[84/200] case 732 已完成，跳过
+[85/200] case 689 已完成，跳过
+[86/200] case 347 已完成，跳过
+[87/200] case 448 已完成，跳过
+[88/200] case 524  raw: dice=0.7667 clDice=0.8176 B0err=22 | pp: dice=0.7699 clDice=0.8291 B0err=4
+[89/200] case 249  raw: dice=0.6948 clDice=0.7603 B0err=14 | pp: dice=0.6956 clDice=0.7677 B0err=2
+[90/200] case 994  raw: dice=0.8355 clDice=0.8830 B0err=14 | pp: dice=0.8403 clDice=0.8987 B0err=4
+[91/200] case 770  raw: dice=0.8479 clDice=0.9270 B0err=9 | pp: dice=0.8476 clDice=0.9272 B0err=0
+[92/200] case 590  raw: dice=0.7435 clDice=0.7919 B0err=29 | pp: dice=0.7436 clDice=0.8030 B0err=7
+[93/200] case 256  raw: dice=0.7741 clDice=0.8483 B0err=18 | pp: dice=0.7698 clDice=0.8373 B0err=3
+[94/200] case 915  raw: dice=0.8481 clDice=0.9331 B0err=14 | pp: dice=0.8440 clDice=0.9251 B0err=1
+[95/200] case 66  raw: dice=0.7267 clDice=0.7944 B0err=29 | pp: dice=0.7290 clDice=0.8126 B0err=5
+[96/200] case 164  raw: dice=0.8025 clDice=0.9017 B0err=5 | pp: dice=0.8013 clDice=0.9025 B0err=2
+[97/200] case 696  raw: dice=0.8162 clDice=0.9179 B0err=5 | pp: dice=0.8173 clDice=0.9203 B0err=2
+[98/200] case 728  raw: dice=0.7004 clDice=0.7638 B0err=23 | pp: dice=0.7022 clDice=0.7811 B0err=4
+[99/200] case 972  raw: dice=0.7429 clDice=0.7820 B0err=23 | pp: dice=0.7387 clDice=0.7775 B0err=3
+[100/200] case 344  raw: dice=0.8231 clDice=0.8805 B0err=11 | pp: dice=0.8227 clDice=0.8820 B0err=3
+[101/200] case 716  raw: dice=0.7692 clDice=0.8586 B0err=19 | pp: dice=0.7684 clDice=0.8603 B0err=3
+[102/200] case 291  raw: dice=0.8398 clDice=0.9248 B0err=15 | pp: dice=0.8360 clDice=0.9144 B0err=0
+[103/200] case 425  raw: dice=0.7881 clDice=0.8199 B0err=16 | pp: dice=0.7838 clDice=0.8117 B0err=3
+[104/200] case 44  raw: dice=0.7571 clDice=0.8810 B0err=10 | pp: dice=0.7568 clDice=0.8816 B0err=1
+[105/200] case 248  raw: dice=0.8477 clDice=0.8930 B0err=12 | pp: dice=0.8471 clDice=0.8890 B0err=2
+[106/200] case 434  raw: dice=0.6538 clDice=0.6987 B0err=25 | pp: dice=0.6560 clDice=0.7128 B0err=8
+[107/200] case 868  raw: dice=0.8011 clDice=0.8650 B0err=5 | pp: dice=0.8065 clDice=0.8851 B0err=0
+[108/200] case 684  raw: dice=0.7581 clDice=0.8069 B0err=13 | pp: dice=0.7637 clDice=0.8214 B0err=1
+[109/200] case 516  raw: dice=0.8275 clDice=0.9228 B0err=4 | pp: dice=0.8306 clDice=0.9313 B0err=0
+[110/200] case 958  raw: dice=0.7694 clDice=0.8098 B0err=20 | pp: dice=0.7712 clDice=0.8132 B0err=0
+[111/200] case 951  raw: dice=0.8223 clDice=0.8825 B0err=11 | pp: dice=0.8226 clDice=0.8894 B0err=4
+[112/200] case 191  raw: dice=0.7944 clDice=0.8527 B0err=17 | pp: dice=0.7970 clDice=0.8833 B0err=2
+[113/200] case 898  raw: dice=0.8482 clDice=0.9549 B0err=7 | pp: dice=0.8458 clDice=0.9475 B0err=1
+[114/200] case 98  raw: dice=0.7488 clDice=0.8317 B0err=18 | pp: dice=0.7504 clDice=0.8423 B0err=4
+[115/200] case 887  raw: dice=0.7727 clDice=0.7989 B0err=14 | pp: dice=0.7741 clDice=0.8054 B0err=7
+[116/200] case 171  raw: dice=0.8262 clDice=0.8595 B0err=25 | pp: dice=0.8290 clDice=0.8676 B0err=4
+[117/200] case 365  raw: dice=0.7418 clDice=0.8126 B0err=22 | pp: dice=0.7382 clDice=0.8015 B0err=3
+[118/200] case 810  raw: dice=0.8288 clDice=0.8906 B0err=18 | pp: dice=0.8286 clDice=0.8976 B0err=3
+[119/200] case 308  raw: dice=0.8164 clDice=0.8945 B0err=17 | pp: dice=0.8168 clDice=0.8938 B0err=5
+[120/200] case 708  raw: dice=0.8198 clDice=0.9023 B0err=11 | pp: dice=0.8204 clDice=0.9075 B0err=0
+[121/200] case 14  raw: dice=0.8190 clDice=0.9226 B0err=3 | pp: dice=0.8178 clDice=0.9195 B0err=1
+[122/200] case 162  raw: dice=0.6692 clDice=0.6969 B0err=24 | pp: dice=0.6727 clDice=0.7098 B0err=4
+[123/200] case 748  raw: dice=0.8150 clDice=0.9171 B0err=5 | pp: dice=0.8148 clDice=0.9173 B0err=1
+[124/200] case 275  raw: dice=0.8180 clDice=0.8697 B0err=10 | pp: dice=0.8181 clDice=0.8768 B0err=0
+[125/200] case 630  raw: dice=0.6791 clDice=0.6942 B0err=18 | pp: dice=0.6853 clDice=0.7154 B0err=6
+[126/200] case 431  raw: dice=0.7797 clDice=0.8909 B0err=7 | pp: dice=0.7811 clDice=0.9005 B0err=0
+[127/200] case 893  raw: dice=0.8685 clDice=0.9352 B0err=11 | pp: dice=0.8705 clDice=0.9406 B0err=1
+[128/200] case 914  raw: dice=0.7556 clDice=0.8122 B0err=11 | pp: dice=0.7585 clDice=0.8242 B0err=2
+[129/200] case 669  raw: dice=0.8482 clDice=0.9312 B0err=7 | pp: dice=0.8526 clDice=0.9401 B0err=0
+[130/200] case 678  raw: dice=0.7362 clDice=0.8550 B0err=5 | pp: dice=0.7364 clDice=0.8614 B0err=0
+[131/200] case 863  raw: dice=0.8373 clDice=0.9094 B0err=14 | pp: dice=0.8424 clDice=0.9163 B0err=3
+[132/200] case 369  raw: dice=0.8446 clDice=0.9016 B0err=8 | pp: dice=0.8458 clDice=0.9081 B0err=2
+[133/200] case 607  raw: dice=0.8417 clDice=0.9256 B0err=14 | pp: dice=0.8403 clDice=0.9199 B0err=0
+[134/200] case 170  raw: dice=0.6898 clDice=0.7915 B0err=33 | pp: dice=0.6888 clDice=0.7915 B0err=3
+[135/200] case 447  raw: dice=0.6994 clDice=0.6963 B0err=41 | pp: dice=0.7085 clDice=0.7528 B0err=5
+[136/200] case 212  raw: dice=0.7359 clDice=0.8006 B0err=19 | pp: dice=0.7396 clDice=0.8148 B0err=3
+[137/200] case 593  raw: dice=0.8640 clDice=0.9034 B0err=6 | pp: dice=0.8614 clDice=0.8942 B0err=1
+[138/200] case 521  raw: dice=0.8342 clDice=0.9168 B0err=12 | pp: dice=0.8335 clDice=0.9216 B0err=2
+[139/200] case 771  raw: dice=0.8513 clDice=0.9334 B0err=8 | pp: dice=0.8530 clDice=0.9346 B0err=1
+[140/200] case 138  raw: dice=0.8360 clDice=0.8966 B0err=13 | pp: dice=0.8398 clDice=0.9039 B0err=2
+[141/200] case 842  raw: dice=0.7442 clDice=0.8398 B0err=13 | pp: dice=0.7404 clDice=0.8256 B0err=1
+[142/200] case 341  raw: dice=0.8069 clDice=0.8929 B0err=14 | pp: dice=0.8096 clDice=0.9045 B0err=4
+[143/200] case 655  raw: dice=0.7087 clDice=0.7425 B0err=10 | pp: dice=0.7154 clDice=0.7705 B0err=2
+[144/200] case 415  raw: dice=0.7125 clDice=0.7700 B0err=27 | pp: dice=0.7129 clDice=0.7740 B0err=5
+[145/200] case 88  raw: dice=0.8357 clDice=0.9270 B0err=6 | pp: dice=0.8339 clDice=0.9226 B0err=2
+[146/200] case 429  raw: dice=0.8804 clDice=0.9322 B0err=6 | pp: dice=0.8831 clDice=0.9395 B0err=1
+[147/200] case 188  raw: dice=0.8058 clDice=0.8783 B0err=11 | pp: dice=0.8020 clDice=0.8721 B0err=2
+[148/200] case 449  raw: dice=0.8723 clDice=0.9208 B0err=3 | pp: dice=0.8746 clDice=0.9231 B0err=0
+[149/200] case 183  raw: dice=0.8617 clDice=0.9129 B0err=9 | pp: dice=0.8614 clDice=0.9164 B0err=0
+[150/200] case 990  raw: dice=0.8584 clDice=0.9233 B0err=16 | pp: dice=0.8567 clDice=0.9309 B0err=2
+[151/200] case 408  raw: dice=0.8144 clDice=0.9019 B0err=6 | pp: dice=0.8140 clDice=0.9003 B0err=2
+[152/200] case 801  raw: dice=0.7725 clDice=0.8241 B0err=14 | pp: dice=0.7692 clDice=0.8186 B0err=1
+[153/200] case 297  raw: dice=0.8772 clDice=0.9476 B0err=14 | pp: dice=0.8792 clDice=0.9628 B0err=2
+[154/200] case 241  raw: dice=0.8121 clDice=0.8717 B0err=23 | pp: dice=0.8097 clDice=0.8658 B0err=0
+[155/200] case 967  raw: dice=0.8583 clDice=0.9252 B0err=11 | pp: dice=0.8599 clDice=0.9337 B0err=1
+[156/200] case 411  raw: dice=0.8411 clDice=0.9120 B0err=8 | pp: dice=0.8426 clDice=0.9088 B0err=0
+[157/200] case 984  raw: dice=0.8623 clDice=0.9097 B0err=19 | pp: dice=0.8662 clDice=0.9298 B0err=5
+[158/200] case 741  raw: dice=0.7110 clDice=0.6360 B0err=27 | pp: dice=0.7142 clDice=0.6493 B0err=7
+[159/200] case 245  raw: dice=0.8095 clDice=0.9006 B0err=21 | pp: dice=0.8037 clDice=0.8902 B0err=3
+[160/200] case 841  raw: dice=0.8243 clDice=0.9159 B0err=9 | pp: dice=0.8250 clDice=0.9229 B0err=0
+[161/200] case 799  raw: dice=0.8365 clDice=0.9198 B0err=16 | pp: dice=0.8337 clDice=0.9198 B0err=1
+[162/200] case 103  raw: dice=0.8368 clDice=0.9341 B0err=8 | pp: dice=0.8441 clDice=0.9563 B0err=2
+[163/200] case 90  raw: dice=0.7866 clDice=0.8082 B0err=24 | pp: dice=0.7857 clDice=0.8049 B0err=4
+[164/200] case 844  raw: dice=0.8651 clDice=0.8905 B0err=19 | pp: dice=0.8652 clDice=0.8969 B0err=3
+[165/200] case 354  raw: dice=0.7718 clDice=0.8090 B0err=9 | pp: dice=0.7763 clDice=0.8162 B0err=3
+[166/200] case 641  raw: dice=0.8979 clDice=0.9768 B0err=2 | pp: dice=0.8979 clDice=0.9774 B0err=1
+[167/200] case 511  raw: dice=0.8653 clDice=0.9391 B0err=10 | pp: dice=0.8657 clDice=0.9432 B0err=0
+[168/200] case 300  raw: dice=0.8958 clDice=0.9624 B0err=5 | pp: dice=0.8974 clDice=0.9677 B0err=1
+[169/200] case 485  raw: dice=0.7582 clDice=0.8569 B0err=11 | pp: dice=0.7563 clDice=0.8534 B0err=2
+[170/200] case 987  raw: dice=0.7889 clDice=0.8615 B0err=0 | pp: dice=0.7880 clDice=0.8574 B0err=3
+[171/200] case 745  raw: dice=0.8298 clDice=0.8964 B0err=26 | pp: dice=0.8293 clDice=0.8964 B0err=3
+[172/200] case 698  raw: dice=0.8903 clDice=0.9153 B0err=18 | pp: dice=0.8967 clDice=0.9594 B0err=2
+[173/200] case 759  raw: dice=0.7350 clDice=0.8270 B0err=19 | pp: dice=0.7337 clDice=0.8270 B0err=5
+[174/200] case 281  raw: dice=0.7601 clDice=0.8355 B0err=13 | pp: dice=0.7572 clDice=0.8320 B0err=4
+[175/200] case 615  raw: dice=0.8247 clDice=0.9159 B0err=13 | pp: dice=0.8232 clDice=0.9082 B0err=2
+[176/200] case 122  raw: dice=0.8112 clDice=0.9111 B0err=5 | pp: dice=0.8117 clDice=0.9142 B0err=3
+[177/200] case 653  raw: dice=0.7589 clDice=0.8257 B0err=18 | pp: dice=0.7590 clDice=0.8312 B0err=5
+[178/200] case 564  raw: dice=0.8282 clDice=0.8663 B0err=5 | pp: dice=0.8316 clDice=0.8734 B0err=1
+[179/200] case 312  raw: dice=0.8307 clDice=0.9012 B0err=5 | pp: dice=0.8301 clDice=0.8971 B0err=1
+[180/200] case 3  raw: dice=0.8567 clDice=0.9049 B0err=11 | pp: dice=0.8587 clDice=0.9184 B0err=1
+[181/200] case 184  raw: dice=0.7744 clDice=0.8277 B0err=14 | pp: dice=0.7779 clDice=0.8405 B0err=3
+[182/200] case 125  raw: dice=0.8405 clDice=0.8868 B0err=17 | pp: dice=0.8403 clDice=0.8926 B0err=1
+[183/200] case 127  raw: dice=0.8872 clDice=0.9473 B0err=6 | pp: dice=0.8883 clDice=0.9531 B0err=3
+[184/200] case 488  raw: dice=0.7942 clDice=0.8431 B0err=15 | pp: dice=0.7976 clDice=0.8622 B0err=3
+[185/200] case 642  raw: dice=0.8537 clDice=0.9172 B0err=9 | pp: dice=0.8558 clDice=0.9227 B0err=2
+[186/200] case 179  raw: dice=0.7420 clDice=0.7990 B0err=29 | pp: dice=0.7439 clDice=0.8119 B0err=2
+[187/200] case 600  raw: dice=0.7729 clDice=0.8108 B0err=21 | pp: dice=0.7733 clDice=0.8220 B0err=2
+[188/200] case 920  raw: dice=0.7911 clDice=0.8544 B0err=13 | pp: dice=0.7915 clDice=0.8461 B0err=4
+[189/200] case 781  raw: dice=0.7936 clDice=0.8732 B0err=18 | pp: dice=0.7948 clDice=0.8863 B0err=3
+[190/200] case 721  raw: dice=0.7813 clDice=0.8318 B0err=31 | pp: dice=0.7851 clDice=0.8451 B0err=0
+[191/200] case 192  raw: dice=0.8485 clDice=0.9360 B0err=6 | pp: dice=0.8488 clDice=0.9404 B0err=2
+[192/200] case 778  raw: dice=0.7963 clDice=0.8709 B0err=26 | pp: dice=0.8044 clDice=0.8908 B0err=2
+[193/200] case 226  raw: dice=0.8074 clDice=0.8412 B0err=16 | pp: dice=0.8090 clDice=0.8524 B0err=6
+[194/200] case 303  raw: dice=0.8587 clDice=0.9320 B0err=9 | pp: dice=0.8655 clDice=0.9522 B0err=0
+[195/200] case 323  raw: dice=0.7430 clDice=0.8716 B0err=18 | pp: dice=0.7426 clDice=0.8796 B0err=2
+[196/200] case 351  raw: dice=0.8389 clDice=0.9287 B0err=5 | pp: dice=0.8380 clDice=0.9281 B0err=1
+[197/200] case 782  raw: dice=0.8292 clDice=0.8741 B0err=17 | pp: dice=0.8316 clDice=0.8887 B0err=4
+[198/200] case 120  raw: dice=0.8483 clDice=0.9397 B0err=7 | pp: dice=0.8501 clDice=0.9476 B0err=0
+[199/200] case 200  raw: dice=0.7012 clDice=0.7608 B0err=25 | pp: dice=0.6971 clDice=0.7573 B0err=0
+[200/200] case 688  raw: dice=0.7426 clDice=0.8222 B0err=18 | pp: dice=0.7427 clDice=0.8300 B0err=2
+
+===== 三方向融合 测试集均值 =====
+  融合=mean  thr=0.5  min_voxels=300  max_gap=0
+  [原始] dice: 0.8004
+  [原始] cldice: 0.8676
+  [原始] betti0_err: 14.5050
+  [原始] hd95: 20.4564
+  [后处理] dice: 0.8012
+  [后处理] cldice: 0.8733
+  [后处理] betti0_err: 2.2400
+  [后处理] hd95: 21.2026
+
+  单轴 baseline: Dice=0.8027 clDice=0.8670 Betti0=3.68 HD95=23.66
+  结果已存: runs/exp_tri2p5d/test_metrics_tri_mean050.csv

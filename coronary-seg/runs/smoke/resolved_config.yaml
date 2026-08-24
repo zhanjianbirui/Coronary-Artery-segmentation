@@ -1,0 +1,51 @@
+project_name: coronary-seg
+seed: 42
+data:
+  data_root: ''
+  split_json: splits/split.json
+  cache_rate: 0.0
+  num_workers: 8
+preprocess:
+  a_min: -200.0
+  a_max: 800.0
+  clip: true
+  target_spacing:
+  - 0.5
+  - 0.5
+  - 0.5
+  patch_size:
+  - 128
+  - 128
+  - 128
+train:
+  max_epochs: 2
+  batch_size: 2
+  samples_per_image: 2
+  pos_ratio: 0.8
+  lr: 0.0002
+  weight_decay: 1.0e-05
+  amp: true
+  val_interval: 1
+  grad_clip: 12.0
+model:
+  name: unet
+  in_channels: 1
+  out_channels: 2
+  channels:
+  - 16
+  - 32
+  - 64
+  - 128
+  - 256
+  strides:
+  - 2
+  - 2
+  - 2
+  - 2
+  num_res_units: 2
+  dropout: 0.0
+infer:
+  sw_batch_size: 4
+  overlap: 0.5
+output:
+  work_dir: runs/smoke
