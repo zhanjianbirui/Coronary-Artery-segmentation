@@ -11,9 +11,13 @@ scripts/predict_stage2.py — stage-2 3D 精修推理 + 评估
 指标实现与单轴/三方向 predict 完全一致，保证与 baseline 3.68 / clDice
 0.8670 / HD95 23.66 可比。
 
+前置依赖：--data-root 指向 stage2_prepare.py 的输出目录**下的 split 子目录**，
+即 <out-dir>/test（脚本按 <data_root>/<glob> 直接 glob，不会自己进子目录）。
+所以必须先跑 slurm/stage2_prep_test.sbatch 生成 test 集 npz。
+
 用法：
   PYTHONPATH=. python scripts/predict_stage2.py \
-      --data-root /path/to/cache/stage2_npz \
+      --data-root /path/to/cache/stage2/test \
       --ckpt runs/stage2/best.pth \
       --thr 0.50 --min-voxels 300 --max-gap 0 \
       --roi 128 --overlap 0.5 \

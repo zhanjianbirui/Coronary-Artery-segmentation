@@ -23,6 +23,7 @@ from monai.data import PersistentDataset
 from src.smart_reconnect import smart_reconnect
 from src.model import build_model
 from src.data import build_preprocess, load_split
+from src.spatial_prior import spatial_prior_filter
 import os
 import sys
 import csv
@@ -82,6 +83,20 @@ def hd95(pred, gt):
         return v
     except Exception:
         return float("nan")
+
+
+def precision_recall(pred, gt, eps=1e-6):
+    """体素级 precision / recall。
+
+    区分"多画了"和"漏画了"必须靠这两个，Dice 把两者混在一起看不出来。
+    2026-08-24 的诊断就是靠它定位到 HD95 长尾由假阳（precision 低）驱动。
+    """
+    p = pred.astype(bool)
+    g = gt.astype(bool)
+    tp = np.logical_and(p, g).sum()
+    precision = tp / (p.sum() + eps)
+    recall = tp / (g.sum() + eps)
+    return float(precision), float(recall)
 
 
 # ---------------------------------------------------------------
@@ -151,7 +166,13 @@ def reconnect_endpoints(mask, max_gap=15):
 
 
 def postprocess(mask, min_voxels=200, max_gap=15, smart=False,
-                smart_L=8, smart_align=0.5):
+                smart_L=8, smart_align=0.5,
+                sp_dist=0.0, sp_anchor=2, sp_chain=True, spacing=0.5):
+    """后处理链：去小分量 →（可选）端点重连 →（可选）空间先验过滤。
+
+    空间先验放在最后：重连可能把碎片桥接到主干上，那它就不该再被判为"远"。
+    sp_dist<=0 时整段跳过，行为与加入空间先验之前完全一致。
+    """
     m = remove_small_components(mask, min_voxels)
     if smart and max_gap > 0:
         m = smart_reconnect(m, max_gap=max_gap, L=smart_L,
@@ -159,6 +180,9 @@ def postprocess(mask, min_voxels=200, max_gap=15, smart=False,
         m = remove_small_components(m, max(30, min_voxels // 5))
     elif max_gap > 0:
         m = reconnect_endpoints(m, max_gap)
+    if sp_dist and sp_dist > 0:
+        m = spatial_prior_filter(m, spacing=spacing, n_anchor=sp_anchor,
+                                 max_dist_mm=sp_dist, chain=sp_chain)
     return m
 
 
@@ -321,6 +345,15 @@ def parse_args():
     p.add_argument("--smart-align", type=float, default=0.5, help="方向一致性阈值")
     p.add_argument("--max-cases", type=int, default=0, help="0=全部测试集")
     p.add_argument("--tta", action="store_true", help="开启4-way翻转TTA")
+    # ---- 空间先验过滤（P1-a）：删掉"离血管树很远的大块假阳" ----
+    p.add_argument("--sp-dist", type=float, default=0.0,
+                   help="分量到主干的最大允许距离(mm)，0=关闭。"
+                        "先用 scripts/sweep_spatial_prior.py 扫出最优值")
+    p.add_argument("--sp-anchor", type=int, default=2,
+                   help="取前几大分量作锚。默认2 = 左冠+右冠两棵树")
+    p.add_argument("--sp-no-chain", action="store_true",
+                   help="关闭链式生长（默认开启：保留的分量也可作为新锚）")
+
 
     return p.parse_args()
 
@@ -424,7 +457,11 @@ def main():
             args.max_gap,
             smart=args.smart,
             smart_L=args.smart_l,
-            smart_align=args.smart_align
+            smart_align=args.smart_align,
+            sp_dist=args.sp_dist,
+            sp_anchor=args.sp_anchor,
+            sp_chain=not args.sp_no_chain,
+            spacing=args.spacing,
         )
 
         m_raw = evaluate_case(pred_raw, gt)
