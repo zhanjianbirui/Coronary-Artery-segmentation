@@ -5,12 +5,16 @@
 # 目标：找出能压掉 HD95 长尾（诊断出的 12 例 HD95>50）而又不伤
 #       Dice/clDice 的 max_dist_mm × n_anchor 组合。
 #
-# 建议分两步跑：
-#   1) 先只跑 5 个难例确认方向对不对（把 CASE_IDS 打开）
-#   2) 再跑 40 例子集看有没有副作用
+# 网格依据 EXP-010（2026-08-26 第一轮扫描）收窄：
+#   - anchor 从 1 起步改为从 2 起步：a1 已证实灾难性
+#     （recall 0.829->0.528，36/40 例 HD95>50，删掉整条右冠）
+#   - anchor 上探到 6：第一轮 a1<a2<a3 单调递增而 a3 正是网格上界，
+#     最优很可能在网格之外
+#   - dist 收到 8~20mm：第一轮 d>=30mm 时一个分量都不删，
+#     真实"远处孤块"距离集中在 10~30mm 内；补 8mm 探 10 以下
 # 提交: sbatch slurm/sweep_spatial_prior.sbatch
 # ============================================================
-#SBATCH --job-name=sweep_sp
+#SBATCH --job-name=sweep_sp2
 #SBATCH --account=<your-account>
 #SBATCH --partition=gpuA
 #SBATCH --gres=gpu:a100_80g:1
@@ -34,19 +38,28 @@ CACHE_DIR=~/scratch/cache/preproc
 cd "$PROJECT_DIR" || exit 1
 export PYTHONPATH=.
 
-# 第一步用这行：只跑诊断出的 5 个难例，最快确认方向
-# CASE_ARGS="--case-ids 931 630 595 741 728"
-# 第二步用这行：40 例子集，看整体有没有副作用
-CASE_ARGS="--max-cases 40"
+# ---- 分层子集（不要再用 --max-cases N）----
+# 2026-08-26 教训：--max-cases N 取的是**前 N 例**，而长尾病例全排在后面。
+# 前 40 例只有 2 例 HD95>50（全量是 12/200）→ 长尾指标结论完全不可信。
+#
+# 这里用分层子集：全部 12 例长尾（HD95>50） + 12 例普通病例作对照。
+# 前者看修复效果，后者看副作用。
+#
+# !! 注意 !! 该子集**富集了难例**，baseline 绝对值会明显差于全量 200 例，
+# 不能拿来当最终指标报。它只用于**给配置排序**，选出最优 d/anchor 后
+# 必须再跑全量验证。
+TAIL_CASES="741 630 655 931 595 728 447 771 184 415 466 493"
+CTRL_CASES="936 761 764 1000 916 5 69 908 790 941 727 203"
+CASE_ARGS="--case-ids $TAIL_CASES $CTRL_CASES"
 
 python -u scripts/sweep_spatial_prior.py \
     --cache-dir "$CACHE_DIR" \
     --ckpt runs/exp_tri2p5d/best.pth \
     --tri --fuse mean --thr 0.50 \
     --min-voxels 300 \
-    --dist-list 10,15,20,30,40,60 \
-    --anchor-list 1,2,3 \
-    --out-csv runs/exp_tri2p5d/sweep_spatial_prior.csv \
+    --dist-list 8,10,12,15,20 \
+    --anchor-list 2,3,4,5,6 \
+    --out-csv runs/exp_tri2p5d/sweep_spatial_prior_r2.csv \
     --batch 1 --max-px-per-batch 500000 \
     --pad-multiple 32 \
     $CASE_ARGS

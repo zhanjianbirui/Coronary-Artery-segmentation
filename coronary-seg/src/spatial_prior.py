@@ -23,16 +23,22 @@ src/spatial_prior.py — 基于空间先验的连通分量过滤
 一大块，解剖上不可能是冠脉。
 
 算法：
-  1. 按体积排序，取 top-N 个最大分量作为"锚"（主干）
+  1. 按**骨架长度**排序（不是体积！见 _component_scores），取 top-N 作为"锚"（主干）
   2. 其余分量：算到锚的最小距离（**毫米**，不是体素）
   3. 距离 <= max_dist_mm 的保留，否则删除
   4. （可选）链式生长：刚保留的分量本身也成为锚，再扫一轮，
      这样"主干 → 中间碎片 → 远端分支"的链条不会被中间断开而误删
 
 为什么锚是 top-N 而不是"最大的那一个"：
-  测试集真值的连通分量数分布是 {1:3, 2:85, 3:55, 4:32, 5:12, ...}，
-  85/200 例的真值本身就有 2 个分量 —— 左冠和右冠是两棵**互不相连**的树。
-  只保留最大分量会把整条右冠直接删掉。默认 n_anchor=2 正对应这个解剖事实。
+  测试集真值的连通分量数分布是 {1:3, 2:85, 3:55, 4:32, 5:12, 6:6, 7:6, 8:1}。
+  只保留最大分量（n_anchor=1）会把整条右冠删掉 —— 这在真实数据上被
+  灾难性验证过：recall 0.829->0.528，36/40 例 HD95>50（EXP-010）。
+
+  n_anchor 该取几：起初按"左冠+右冠"定为 2，但那个理由**只对了一半** ——
+  分布里 3 个分量及以上的病例合计 112/200（超过一半），锚数 2 会把合法的
+  第三段当候选删掉，实测 HD95 反而变差(+2.42)。EXP-010 里 a1<a2<a3 单调
+  递增，故默认改为 3。注意 a3 是当时网格的上界，**真正的最优可能更大**，
+  第二轮扫描已扩到 6。
 
 用法（作为模块被 predict.py / predict_tri.py 调用），也可独立自测：
   python src/spatial_prior.py
@@ -103,7 +109,7 @@ def _subsample(points, max_pts):
     return points[::stride]
 
 
-def spatial_prior_filter(mask, spacing=0.5, n_anchor=2, max_dist_mm=20.0,
+def spatial_prior_filter(mask, spacing=0.5, n_anchor=3, max_dist_mm=20.0,
                          anchor_min_frac=0.10, chain=True, max_iter=10,
                          max_anchor_pts=200_000, anchor_by="skeleton",
                          return_info=False):
@@ -114,7 +120,7 @@ def spatial_prior_filter(mask, spacing=0.5, n_anchor=2, max_dist_mm=20.0,
     ----
     mask : ndarray  二值三维预测（不会被修改，返回新数组）
     spacing : float 或 长度3的序列  体素物理尺寸（mm），预处理后是各向同性 0.5
-    n_anchor : int  取前几"长"的分量作锚。默认 2 = 左冠 + 右冠
+    n_anchor : int  取前几"长"的分量作锚。默认 3（EXP-010 实测优于 2）
     max_dist_mm : float  分量到锚的最小距离阈值（mm），超过则删
     anchor_min_frac : float  第 2..N 个锚的分数至少要达到第一名的这个比例，
                              否则不升格为锚（避免只有一棵树时把噪声当第二棵）

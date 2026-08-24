@@ -46,10 +46,17 @@ mkdir -p runs/stage2
 echo "作业 $SLURM_JOB_ID 在 $(hostname) 启动"
 python -c "import torch; print('CUDA:', torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 
+# 护栏：npz 数量必须等于 split 里的 test 病例数。
+# 只判「非零」是不够的 —— 2026-08-26 就是因为 prep 还没写完，
+# 本作业抢跑拿到 16/200 个 npz，白跑一遍还得出了不能用的结论（BUG-006）。
 N_NPZ=$(ls "$DATA_ROOT"/*.npz 2>/dev/null | wc -l)
-echo "test npz 数量: $N_NPZ"
-if [ "$N_NPZ" -eq 0 ]; then
-    echo "错误：$DATA_ROOT 下没有 npz。请先跑 slurm/stage2_prep_test.sbatch"
+N_EXPECT=$(python -c "import json;print(len(json.load(open('splits/split.json'))['test']))")
+echo "test npz: $N_NPZ / 期望 $N_EXPECT"
+if [ "$N_NPZ" -ne "$N_EXPECT" ]; then
+    echo "错误：npz 数量不符（$N_NPZ != $N_EXPECT）。"
+    echo "  若为 0：先跑 slurm/stage2_prep_test.sbatch"
+    echo "  若非 0：prep 尚未完成或中途失败。提交时请带依赖："
+    echo "    sbatch --dependency=afterok:<prep_jobid> slurm/predict_stage2.sbatch"
     exit 1
 fi
 

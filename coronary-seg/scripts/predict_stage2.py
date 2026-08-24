@@ -273,8 +273,12 @@ def main():
 
     # 汇总：stage1 vs stage2 均值
     def _mean(key):
-        vals = [r[key] for r in rows
-                if isinstance(r[key], float) and not np.isnan(r[key])]
+        # betti0_err 是 int（abs(n_pred-n_gt)），不能只收 float，
+        # 否则整列被滤空、均值变成 nan
+        vals = [float(r[key]) for r in rows
+                if isinstance(r[key], (int, float))
+                and not isinstance(r[key], bool)
+                and np.isfinite(r[key])]
         return np.mean(vals) if vals else float("nan")
 
     print("\n" + "=" * 68)

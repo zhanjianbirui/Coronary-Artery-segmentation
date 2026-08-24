@@ -692,8 +692,9 @@ def parse_args():
     p.add_argument("--sp-dist", type=float, default=0.0,
                    help="分量到主干的最大允许距离(mm)，0=关闭。"
                         "先用 scripts/sweep_spatial_prior.py 扫出最优值")
-    p.add_argument("--sp-anchor", type=int, default=2,
-                   help="取前几大分量作锚。默认2 = 左冠+右冠两棵树")
+    p.add_argument("--sp-anchor", type=int, default=3,
+                   help="取前几长的分量作锚（按骨架长度，非体积）。默认3："
+                        "过半病例真值有>=3个分量，取2会误删合法的第三段")
     p.add_argument("--sp-no-chain", action="store_true",
                    help="关闭链式生长（默认开启：保留的分量也可作为新锚）")
     return p.parse_args()
