@@ -34,11 +34,15 @@ src/spatial_prior.py — 基于空间先验的连通分量过滤
   只保留最大分量（n_anchor=1）会把整条右冠删掉 —— 这在真实数据上被
   灾难性验证过：recall 0.829->0.528，36/40 例 HD95>50（EXP-010）。
 
-  n_anchor 该取几：起初按"左冠+右冠"定为 2，但那个理由**只对了一半** ——
-  分布里 3 个分量及以上的病例合计 112/200（超过一半），锚数 2 会把合法的
-  第三段当候选删掉，实测 HD95 反而变差(+2.42)。EXP-010 里 a1<a2<a3 单调
-  递增，故默认改为 3。注意 a3 是当时网格的上界，**真正的最优可能更大**，
-  第二轮扫描已扩到 6。
+  n_anchor 该取几：两轮扫描给出过**相反**的结论，最终定为 2。
+  - 第一轮（前 40 例，仅含 2 例长尾）：a1<a2<a3，a3 最优 → 曾一度改默认为 3
+  - 第二轮（分层子集，12 例长尾 + 12 对照）：**a2** > a3 > a4 > a5 > a6，
+    单调递减，a2 四项指标全改善（EXP-013）
+
+  机制：两轮里占主导的风险不同。没有大块假阳时，主要风险是"误删合法的
+  第三段"，锚越多越安全；而长尾病例里假阳是主要矛盾，**锚一多，假阳团块
+  自己就挤进 top-N 当上锚**（它骨架够长），从此免疫过滤。删分量数印证：
+  a2 删 32 个，a6 只删 21 个。第一轮的子集有偏，结论不可信。
 
 用法（作为模块被 predict.py / predict_tri.py 调用），也可独立自测：
   python src/spatial_prior.py
@@ -109,7 +113,7 @@ def _subsample(points, max_pts):
     return points[::stride]
 
 
-def spatial_prior_filter(mask, spacing=0.5, n_anchor=3, max_dist_mm=20.0,
+def spatial_prior_filter(mask, spacing=0.5, n_anchor=2, max_dist_mm=20.0,
                          anchor_min_frac=0.10, chain=True, max_iter=10,
                          max_anchor_pts=200_000, anchor_by="skeleton",
                          return_info=False):
@@ -120,7 +124,7 @@ def spatial_prior_filter(mask, spacing=0.5, n_anchor=3, max_dist_mm=20.0,
     ----
     mask : ndarray  二值三维预测（不会被修改，返回新数组）
     spacing : float 或 长度3的序列  体素物理尺寸（mm），预处理后是各向同性 0.5
-    n_anchor : int  取前几"长"的分量作锚。默认 3（EXP-010 实测优于 2）
+    n_anchor : int  取前几"长"的分量作锚。默认 2（EXP-013 分层子集实测最优）
     max_dist_mm : float  分量到锚的最小距离阈值（mm），超过则删
     anchor_min_frac : float  第 2..N 个锚的分数至少要达到第一名的这个比例，
                              否则不升格为锚（避免只有一棵树时把噪声当第二棵）

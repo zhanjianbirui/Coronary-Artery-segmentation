@@ -9,12 +9,29 @@ scripts/stage2_prepare.py — 阶段2训练数据准备
 
 每个病例存一个 .npz：{prob, image, label}，均为 (H,W,D)。
 
-用法（GPU节点）：
+支持两种阶段1推理方式：
+  - 默认（单轴）：沿 axis=2 逐层推理，与最早的 stage-2 数据一致
+  - `--tri`（三正交）：沿三个正交轴各推一遍再 mean 融合。
+    EXP-012 显示 stage-2 从单轴起点（Dice 0.7955）能精修到 0.8117，
+    而三正交起点是 0.8012 且拓扑更好 → 换成三正交有望叠加增益。
+
+**注意**：换推理方式必须换 `--out-dir`。本脚本靠"文件已存在就跳过"做续跑，
+指向旧目录会把之前单轴生成的 npz 当成已完成，得到混了两种来源的数据集。
+
+用法（单轴，旧）：
   PYTHONPATH=. python scripts/stage2_prepare.py \
       --cache-dir /path/to/cache/preproc \
       --ckpt runs/exp_2p5d/best.pth \
       --out-dir /path/to/cache/stage2 \
       --splits train,val
+
+用法（三正交，新）：
+  PYTHONPATH=. python scripts/stage2_prepare.py \
+      --cache-dir /path/to/cache/preproc \
+      --ckpt runs/exp_tri2p5d/best.pth --tri --fuse mean \
+      --out-dir /path/to/cache/stage2_tri \
+      --splits train,val,test \
+      --batch 1 --max-px-per-batch 500000
 """
 
 import os
@@ -29,6 +46,8 @@ from src.model import build_model
 from monai.data import PersistentDataset
 # 复用阶段1的概率推理（含padding、TTA可选）
 from scripts.predict import pad_to_multiple_2d
+# 三正交逐轴推理+即时融合（内存友好，不同时保留三个概率体）
+from scripts.predict_tri import predict_tri_fused
 
 
 @torch.no_grad()
@@ -56,6 +75,31 @@ def predict_prob(model, image3d, k, device, batch=16, pad_multiple=32):
     return prob_vol
 
 
+def save_npz_atomic(out_path, **arrays):
+    """原子写 npz：先写 .tmp 再 rename。
+
+    BUG-004 的教训：作业被杀/超时会留下写了一半的 npz，
+    而 npz 是 zip 容器，截断后解压必然报
+    `zlib.error: Error -3 while decompressing data`，
+    并且续跑逻辑只看"文件是否存在"，会把这个坏文件当成已完成永远跳过。
+    rename 在同一文件系统上是原子的，所以要么没有文件、要么是完整文件。
+    """
+    # 注意后缀必须是 .npz：np.savez_compressed 遇到非 .npz 结尾会**自动追加**
+    # .npz，写出的其实是 xxx.tmp.npz，随后 rename 找不到文件而失败。
+    tmp_path = out_path + ".tmp.npz"
+    try:
+        np.savez_compressed(tmp_path, **arrays)
+        os.replace(tmp_path, out_path)
+    except BaseException:
+        # 包括 KeyboardInterrupt / SIGTERM 引发的异常，别留垃圾
+        if os.path.isfile(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
+
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--split-json", default="splits/split.json")
@@ -72,6 +116,17 @@ def parse_args():
     p.add_argument("--init-filters", type=int, default=32)
     p.add_argument("--pad-multiple", type=int, default=32)
     p.add_argument("--max-cases", type=int, default=0)
+    # ---- 三正交推理（EXP-012 后新增）----
+    p.add_argument("--tri", action="store_true",
+                   help="用三正交融合生成概率图（换了它必须换 --out-dir）")
+    p.add_argument("--axes", type=int, nargs="+", default=[0, 1, 2],
+                   help="参与融合的轴，仅 --tri 时生效")
+    p.add_argument("--fuse", default="mean", choices=["mean", "max"],
+                   help="融合方式，实验证明 mean 明显优于 max")
+    p.add_argument("--batch", type=int, default=16,
+                   help="逐层推理的 batch；三正交大切片易 OOM，建议 1")
+    p.add_argument("--max-px-per-batch", type=int, default=4_000_000,
+                   help="batch×平面像素上限，防大切片爆显存；三正交建议 500000")
     return p.parse_args()
 
 
@@ -88,7 +143,11 @@ def main():
     ckpt = torch.load(args.ckpt, map_location=device)
     model.load_state_dict(ckpt["model"])
     model.eval()
-    print(f"阶段1模型 val_dice={ckpt.get('val_dice')}")
+    mode = (f"三正交 axes={args.axes} fuse={args.fuse}" if args.tri else "单轴(axis=2)")
+    print(f"阶段1模型 epoch={ckpt.get('epoch')} val_dice={ckpt.get('val_dice')}")
+    print(f"推理方式: {mode}")
+    print(f"输出目录: {args.out_dir}  （续跑靠'文件已存在则跳过'，"
+          f"换推理方式务必换目录）")
 
     preprocess = build_preprocess(args.spacing, args.hu_min, args.hu_max)
     train_rec, val_rec, test_rec = load_split(args.split_json)
@@ -103,6 +162,12 @@ def main():
                                   cache_dir=args.cache_dir)
         sub_dir = os.path.join(args.out_dir, split_name)
         os.makedirs(sub_dir, exist_ok=True)
+        # 上次作业被杀可能留下 .tmp，清掉免得占磁盘
+        stale = [f for f in os.listdir(sub_dir) if f.endswith(".tmp.npz")]
+        for f in stale:
+            os.remove(os.path.join(sub_dir, f))
+        if stale:
+            print(f"  清理了 {len(stale)} 个残留 .tmp")
         print(f"\n=== {split_name}: {len(recs)} 病例 ===")
 
         for ci in range(len(recs)):
@@ -114,12 +179,23 @@ def main():
             vol = cache[ci]
             image3d = np.asarray(vol["image"])[0].astype(np.float16)  # (H,W,D)
             label = np.asarray(vol["label"])[0].astype(np.uint8)
-            prob = predict_prob(model, np.asarray(vol["image"]),
-                                args.k, device,
-                                pad_multiple=args.pad_multiple).astype(np.float16)
-            np.savez_compressed(out_path, image=image3d, prob=prob, label=label)
+            if args.tri:
+                fused = predict_tri_fused(
+                    model, np.asarray(vol["image"]), args.k, device,
+                    axes=tuple(args.axes), methods=(args.fuse,),
+                    batch=args.batch, pad_multiple=args.pad_multiple,
+                    max_px_per_batch=args.max_px_per_batch)
+                prob = fused[args.fuse].astype(np.float16)
+                del fused
+            else:
+                prob = predict_prob(model, np.asarray(vol["image"]),
+                                    args.k, device,
+                                    pad_multiple=args.pad_multiple
+                                    ).astype(np.float16)
+            save_npz_atomic(out_path, image=image3d, prob=prob, label=label)
             print(f"  [{ci+1}/{len(recs)}] {cid} 存储完成 "
                   f"shape={image3d.shape}")
+            del image3d, label, prob, vol
 
     print(f"\n完成。阶段2数据在 {args.out_dir}/<split>/<id>.npz")
     print("每个 npz 含: image(原图), prob(阶段1概率), label(金标准)")
