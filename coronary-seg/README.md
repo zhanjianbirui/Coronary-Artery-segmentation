@@ -67,6 +67,7 @@ coronary-seg/
 │   ├── scout_bbox.py             # 血管边界框侦察（确定裁剪尺寸）
 │   ├── sweep_postproc.py         # 后处理参数扫描
 │   ├── sweep_spatial_prior.py    # 空间先验参数扫描（max_dist_mm × n_anchor）
+│   ├── compare_runs.py           # 多方案逐病例配对显著性比较（Wilcoxon+Holm）
 │   ├── sweep_threshold.py        # 预测阈值扫描
 │   ├── check_data.py             # 数据核对
 │   ├── vis_slices.py             # 切片可视化
@@ -77,6 +78,7 @@ coronary-seg/
 │   ├── train_2p5d.sbatch         # 2.5D 训练作业脚本
 │   ├── predict_tta.sbatch        # TTA 推理作业脚本
 │   ├── predict_tri_mean050.sbatch# 三正交融合全量推理作业脚本
+│   ├── predict_tri_mean050_v2.sbatch # 同上，用当前 best.pth 重跑
 │   ├── sweep_spatial_prior.sbatch# 空间先验扫描作业脚本
 │   ├── stage2_prep_test.sbatch   # Stage-2 数据生成（单轴起点）
 │   ├── stage2_prep_tri.sbatch    # Stage-2 数据生成（三正交起点）
@@ -283,6 +285,30 @@ sbatch slurm/sweep_spatial_prior.sbatch
 **方法边界**：只能删**与血管树分离**的假阳。若假阳紧贴或连通冠脉树
 （比如从冠脉开口连出去的主动脉），它到主干距离为 0，本方法无效 ——
 Stage-2 也修不了，它是 128³ patch 级训练，看不到全局解剖。
+
+### 7. 方案间显著性比较
+
+均值差不等于有提升。曾按均值几乎把三正交相对单轴+TTA 的 Dice 说成「打平」，
+配对检验才看出那是**统计显著的小幅下降**（p=0.015），而看起来更大的 HD95
+改善反而**不显著**（p=0.064，均值被重尾拉动）。论文里每个 Δ 都该配 p 值。
+
+`compare_runs.py` 只读结果 csv，不需要 GPU/torch/monai，**login 节点直接跑**：
+
+```bash
+PYTHONPATH=. python scripts/compare_runs.py \
+    --baseline "三正交=runs/exp_tri2p5d/test_metrics_tri_mean050.csv:pp" \
+    --runs "单轴=runs/exp_2p5d/test_metrics_optimal.csv:pp" \
+           "单轴+TTA=runs/exp_2p5d/test_final_tta.csv:pp" \
+           "Stage2=runs/stage2/test_metrics_stage2.csv:s2" \
+    --out-csv runs/significance.csv
+```
+
+`路径:前缀` 里的前缀对应 csv 列名：`predict.py`/`predict_tri.py` 用
+`raw` / `pp`，`predict_stage2.py` 用 `s1` / `s2`。
+
+检验用 Wilcoxon 符号秩（配对、非参数，HD95 重尾时比 t 检验稳），
+多重比较做 Holm-Bonferroni 校正——一次比 4 个指标 × 若干方案，
+不校正会虚增假阳性，这是论文里会被问的点。
 
 ## 调参速查
 
