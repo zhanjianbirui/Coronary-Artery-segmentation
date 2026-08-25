@@ -2,12 +2,20 @@
 # ============================================================
 # SLURM SLURM — 三正交融合全量推理（用当前 best.pth 重跑）
 #
-# 为什么要重跑：现有的全量结果
+# 为什么要重跑：旧的全量结果
 #   runs/exp_tri2p5d/test_metrics_tri_mean050.csv
 #   （Dice 0.8012 / clDice 0.8733 / Betti0 2.24 / HD95 21.20）
 # 是用 epoch=36 val_dice=0.8106 那版权重跑的。之后训练继续，
-# 当前 runs/exp_tri2p5d/best.pth 已是 epoch=59 val_dice=0.8135。
+# best.pth 已是 epoch=59 val_dice=0.8135。
 # 所有横向对比都以三正交为基准，基准本身的口径必须是最新的。
+#
+# 【已于 2026-08-25 跑完，结论见 EXP-014】结果比预期重要得多：
+#   v2: Dice 0.8098 / clDice 0.8762 / Betti0 2.46 / HD95 20.53
+#   v2 显著优于 v1（Dice p=8e-20，167/200 例更优；HD95 p=4e-02）
+# 光换这一个 checkpoint 就翻转了两条已写进文档的结论：
+#   - Stage-2 vs 三正交的 Dice：p=5e-11「显著」→ p=0.051 不显著
+#   - 三正交 vs 单轴+TTA 的 Dice：p=0.015「显著变差」→ p=4e-08「显著变好」
+# 教训：baseline 必须用它自己的最优权重，且更新后要系统性重跑所有相关比较。
 #
 # !! 必须用新的 out-csv !!
 #   predict_tri.py 的全量模式会读已有 csv 跳过已完成病例。
