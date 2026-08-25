@@ -59,6 +59,10 @@ def divergence_stats(probs, label, thr=0.5):
     # float32 累加的舍入噪声可达 1e-7，会在「三方向一致」处产生虚假分歧。
     # 结果转回 float32 存储，额外内存只在临时量上。
     stack = np.stack(probs, axis=0).astype(np.float32)
+    if stack.ndim != 4:
+        raise ValueError(
+            f"期望每个方向一个 3D 概率体，堆叠后应为 4D，实得 {stack.shape}。"
+            f"常见原因：predict_tri_probs 返回 dict，直接迭代拿到的是 axis 编号。")
     mean = stack.mean(axis=0, dtype=np.float64).astype(np.float32)
     std = stack.std(axis=0, dtype=np.float64).astype(np.float32)
 
@@ -194,10 +198,14 @@ def main():
         image = item["image"]
         label = np.asarray(item["label"])[0].astype(np.uint8)
 
-        probs = predict_tri_probs(model, image, args.k, device,
-                                  axes=tuple(args.axes), batch=args.batch,
-                                  pad_multiple=args.pad_multiple)
-        probs = [np.asarray(p, dtype=np.float32) for p in probs]
+        # predict_tri_probs 返回的是 dict{axis: prob_vol}，不是 list ——
+        # 直接迭代会拿到 axis 编号而非概率体。
+        prob_by_axis = predict_tri_probs(model, image, args.k, device,
+                                         axes=tuple(args.axes),
+                                         batch=args.batch,
+                                         pad_multiple=args.pad_multiple)
+        probs = [np.asarray(prob_by_axis[ax], dtype=np.float32)
+                 for ax in args.axes]
         mean, std, wrong = divergence_stats(probs, label, args.thr)
 
         # ---- A. 分歧是否标记了错误 ----
@@ -292,6 +300,16 @@ def self_test():
     q = np.full((4, 4, 4), 0.1, dtype=np.float32)
     _, std2, _ = divergence_stats([p, p, q], np.ones((4, 4, 4), np.uint8))
     chk("单方向分歧产生 std>0", (std2 > 0).all())
+
+    # 这个坑真实发生过：predict_tri_probs 返回 dict，直接迭代得到的是 axis
+    # 编号（标量），堆叠后 std 归约成 0-d，一路静默到 auc_score 才报
+    # "invalid index to scalar variable"。护栏让它在源头就报清楚。
+    try:
+        divergence_stats([0, 1, 2], np.ones((4, 4, 4), np.uint8))
+        chk("误传标量列表时被护栏拦下", False)
+    except ValueError as e:
+        chk("误传标量列表时被护栏拦下（而非静默到 AUC 才炸）",
+            "4D" in str(e))
 
     print("\n[2] bucket_error_rate")
     std = np.linspace(0, 1, 1000)
