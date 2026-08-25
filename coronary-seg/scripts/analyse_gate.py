@@ -61,15 +61,35 @@ def region_masks(prob, label, thr=0.5):
     }
 
 
-def gate_stats_by_region(gate, prob, label, thr=0.5):
-    """各分区的 gate 均值与体素数。返回 {区域: (mean, count)}。
+def gate_stats_by_region(gate, prob, label, thr=0.5, delta=None):
+    """各分区的门控与修正量统计。返回 {区域: dict}。
 
-    空分区返回 (nan, 0) —— 例如 stage-1 完美的 patch 没有 FN/FP。
+    只看 gate 是不够的：实际施加的修正是 **g x delta**。
+    背景区域可能 gate 很高但 delta≈0，那样 gate 高就无害 —— 这种情况下
+    结论应当是「门控冗余」而非「门控失效」，二者对论文的含义不同。
+
+    每个区域返回:
+        gate  —— 门控强度均值
+        adel  —— |delta| 均值（网络想改多少）
+        acorr —— |g x delta| 均值（实际改了多少）
+        n     —— 体素数
+    空分区返回 nan —— 例如 stage-1 完美的 patch 没有 FN/FP。
     """
     out = {}
     for name, m in region_masks(prob, label, thr).items():
         n = int(m.sum())
-        out[name] = (float(gate[m].mean()) if n else float("nan"), n)
+        if not n:
+            out[name] = {"gate": float("nan"), "adel": float("nan"),
+                         "acorr": float("nan"), "n": 0}
+            continue
+        rec = {"gate": float(gate[m].mean()), "n": n}
+        if delta is not None:
+            ad = np.abs(delta)
+            rec["adel"] = float(ad[m].mean())
+            rec["acorr"] = float((gate * ad)[m].mean())
+        else:
+            rec["adel"] = rec["acorr"] = float("nan")
+        out[name] = rec
     return out
 
 
@@ -137,7 +157,7 @@ def collect_gate(model, image, prob, device, roi=128, n_patch=8, seed=0):
             c = np.array([rng.integers(D), rng.integers(H), rng.integers(W)])
         centres.append(c)
 
-    gates, probs, labels_idx = [], [], []
+    gates, deltas, probs, labels_idx = [], [], [], []
     for c in centres:
         s = [int(np.clip(c[k] - r // 2, 0, (D, H, W)[k] - r)) for k in range(3)]
         sl = tuple(slice(s[k], s[k] + r) for k in range(3))
@@ -147,11 +167,12 @@ def collect_gate(model, image, prob, device, roi=128, n_patch=8, seed=0):
             _, parts = model(xt, return_parts=True)
         g = parts["gate"]
         if g is None:                                          # --no-gate 模型
-            return None, None, None
+            return None, None, None, None
         gates.append(g[0, 0].cpu().numpy())
+        deltas.append(parts["delta"][0, 0].cpu().numpy())
         probs.append(prob[sl])
         labels_idx.append(sl)
-    return gates, probs, labels_idx
+    return gates, deltas, probs, labels_idx
 
 
 def main():
@@ -196,7 +217,7 @@ def main():
     print(f"分析 {len(files)} 个病例，每例 {args.n_patch} 个 {args.roi}³ patch")
 
     rows = []
-    agg = {k: [] for k in REGIONS}
+    agg = {k: {"gate": [], "adel": [], "acorr": []} for k in REGIONS}
     corrs = []
     for i, f in enumerate(files, 1):
         d = np.load(f)
@@ -208,19 +229,21 @@ def main():
         if res[0] is None:
             print("该 checkpoint 不含门控（--no-gate 训练），无法分析")
             return 1
-        gates, probs, slices = res
+        gates, deltas, probs, slices = res
 
-        for g, p, sl in zip(gates, probs, slices):
-            st = gate_stats_by_region(g, p, label[sl], args.thr)
+        for g, dl, p, sl in zip(gates, deltas, probs, slices):
+            st = gate_stats_by_region(g, p, label[sl], args.thr, delta=dl)
             c = corr(g, binary_entropy(p))
             if not np.isnan(c):
                 corrs.append(c)
             for k in REGIONS:
-                if st[k][1]:
-                    agg[k].append(st[k][0])
+                if st[k]["n"]:
+                    for metric in ("gate", "adel", "acorr"):
+                        agg[k][metric].append(st[k][metric])
             rows.append({"case": os.path.basename(f), "corr_gate_entropy": c,
-                         **{f"gate_{k}": st[k][0] for k in REGIONS},
-                         **{f"n_{k}": st[k][1] for k in REGIONS}})
+                         **{f"{m}_{k}": st[k][m] for k in REGIONS
+                            for m in ("gate", "adel", "acorr")},
+                         **{f"n_{k}": st[k]["n"] for k in REGIONS}})
         if i % 10 == 0:
             print(f"  [{i}/{len(files)}]")
 
@@ -231,25 +254,43 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    print("\n" + "=" * 62)
-    print("  门控在各分区的平均强度（按 stage-1 的对错切分）")
-    print("=" * 62)
+    print("\n" + "=" * 74)
+    print("  门控与修正量（按 stage-1 的对错切分）")
+    print("=" * 74)
     desc = {"TP": "stage-1 正确命中", "TN": "stage-1 正确排除",
             "FN": "stage-1 漏检  <- 该修", "FP": "stage-1 假阳  <- 该修"}
+    print(f"  {'区域':<6}{'gate':>8}{'|delta|':>10}{'|g*delta|':>12}   说明")
     for k in REGIONS:
-        v = agg[k]
-        if v:
-            print(f"  gate({k})  {np.mean(v):.4f}   {desc[k]}   (n={len(v)} patch)")
-    need = [np.mean(agg[k]) for k in ("FN", "FP") if agg[k]]
-    keep = [np.mean(agg[k]) for k in ("TP", "TN") if agg[k]]
-    if need and keep:
-        ratio = np.mean(need) / max(np.mean(keep), 1e-8)
-        print(f"\n  「该修区域」/「该留区域」的门控强度比 = {ratio:.2f}")
-        print("  > 1 表示门控确实更多作用在 stage-1 出错处（符合 DEC-008 的设计意图）")
-        print("  ≈ 1 表示门控接近均匀施加，未体现选择性")
+        a = agg[k]
+        if a["gate"]:
+            print(f"  {k:<6}{np.mean(a['gate']):>8.4f}{np.mean(a['adel']):>10.4f}"
+                  f"{np.mean(a['acorr']):>12.4f}   {desc[k]}")
+
+    def mean_of(regs, metric):
+        v = [np.mean(agg[k][metric]) for k in regs if agg[k][metric]]
+        return np.mean(v) if v else float("nan")
+
+    print("\n  ---- 判读 ----")
+    g_need, g_keep = mean_of(("FN", "FP"), "gate"), mean_of(("TP", "TN"), "gate")
+    c_need, c_keep = mean_of(("FN", "FP"), "acorr"), mean_of(("TP", "TN"), "acorr")
+    if np.isfinite(g_need) and np.isfinite(g_keep):
+        print(f"  门控强度比  gate(该修)/gate(该留) = {g_need / max(g_keep, 1e-8):.2f}")
+    if np.isfinite(c_need) and np.isfinite(c_keep):
+        print(f"  实际修正比  |g*d|(该修)/|g*d|(该留) = {c_need / max(c_keep, 1e-8):.2f}")
+    print("  > 1 表示修正确实集中在 stage-1 出错处（符合 DEC-008 设计意图）")
+
+    all_gate = [x for k in REGIONS for x in agg[k]["gate"]]
+    if all_gate:
+        gm = np.mean(all_gate)
+        print(f"\n  全局 gate 均值 = {gm:.4f}")
+        if gm > 0.9:
+            print("  ** gate 处处接近 1 -> refined = prob + g*delta 退化为 prob + delta，")
+            print("     门控在数学上等价于无门控。这解释了消融中 no-gate 不劣的结果。")
+        elif gm < 0.2:
+            print("  ** gate 处处接近 0 -> 精修几乎未生效，网络退化为恒等映射。")
     if corrs:
         print(f"\n  gate 与预测熵的相关系数 = {np.mean(corrs):+.4f}")
-        print("  正值表示门控在 stage-1 拿不准的地方更活跃")
+        print("  正值表示门控在 stage-1 拿不准的地方更活跃；≈0 表示未利用不确定性信号")
     print("=" * 62)
     print(f"逐 patch 明细已写入 {args.out_csv}")
     return 0
@@ -282,21 +323,39 @@ def self_test():
     print("\n[2] gate_stats_by_region")
     gate = np.array([0.1, 0.1, 0.9, 0.9])          # 只在 FN/FP 上高
     st = gate_stats_by_region(gate, prob, label)
-    chk("gate(FN) 高", abs(st["FN"][0] - 0.9) < 1e-9)
-    chk("gate(TP) 低", abs(st["TP"][0] - 0.1) < 1e-9)
-    chk("计数正确", all(st[k][1] == 1 for k in REGIONS))
+    chk("gate(FN) 高", abs(st["FN"]["gate"] - 0.9) < 1e-9)
+    chk("gate(TP) 低", abs(st["TP"]["gate"] - 0.1) < 1e-9)
+    chk("计数正确", all(st[k]["n"] == 1 for k in REGIONS))
+    chk("不传 delta 时 adel/acorr 为 nan", np.isnan(st["TP"]["adel"]))
     # 全部命中的 patch：TP 有值，其余三区为空 -> 应返回 nan 而非报错
     st2 = gate_stats_by_region(np.array([0.5]), np.array([0.9]), np.array([1]))
     chk("空分区返回 nan 而非报错",
-        np.isnan(st2["FN"][0]) and st2["FN"][1] == 0 and st2["TP"][1] == 1)
+        np.isnan(st2["FN"]["gate"]) and st2["FN"]["n"] == 0 and st2["TP"]["n"] == 1)
 
-    print("\n[3] binary_entropy")
+    print("\n[3] delta 统计 —— 区分「门控失效」与「门控冗余」")
+    # 场景：gate 处处接近 1，但 delta 只在 FN/FP 上非零
+    #       -> 门控本身无选择性，但实际修正仍集中在该修处 = 冗余而非失效
+    g_hi = np.array([0.95, 0.95, 0.95, 0.95])
+    d_sel = np.array([0.0, 0.0, 2.0, 2.0])          # 只想改 FN/FP
+    st3 = gate_stats_by_region(g_hi, prob, label, delta=d_sel)
+    chk("|delta| 在该改处大", st3["FN"]["adel"] > st3["TP"]["adel"])
+    chk("实际修正量 = gate x |delta|",
+        abs(st3["FN"]["acorr"] - 0.95 * 2.0) < 1e-9)
+    chk("该留处实际修正为 0（门控冗余而非失效）",
+        abs(st3["TP"]["acorr"]) < 1e-9)
+    # 场景：delta 处处相同 -> 修正无选择性，才是真正的失效
+    d_flat = np.full(4, 1.0)
+    st4 = gate_stats_by_region(g_hi, prob, label, delta=d_flat)
+    chk("delta 均匀时实际修正也均匀（真·失效）",
+        abs(st4["FN"]["acorr"] - st4["TP"]["acorr"]) < 1e-9)
+
+    print("\n[4] binary_entropy")
     e = binary_entropy(np.array([0.5, 0.01, 0.99]))
     chk("p=0.5 时熵最大", e[0] > e[1] and e[0] > e[2])
     chk("熵非负", (e >= 0).all())
     chk("p=0/1 不产生 inf/nan", np.isfinite(binary_entropy(np.array([0.0, 1.0]))).all())
 
-    print("\n[4] corr")
+    print("\n[5] corr")
     x = np.arange(10.0)
     chk("完全正相关 = 1", abs(corr(x, 2 * x) - 1.0) < 1e-9)
     chk("完全负相关 = -1", abs(corr(x, -x) + 1.0) < 1e-9)
