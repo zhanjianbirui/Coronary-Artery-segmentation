@@ -67,6 +67,7 @@ coronary-seg/
 │   ├── checkpoint.py             # 断点续训（原子写）
 │   ├── smart_reconnect.py        # 方向感知端点重连（实验证明关闭更优）
 │   ├── spatial_prior.py          # 空间先验分量过滤（删离血管树很远的大块假阳）
+│   ├── ckpt_init.py              # --resume / --init-from 的公共逻辑（见 BUG-007）
 │   ├── stage2_model.py           # Stage-2 残差门控 3D SegResNet
 │   ├── stage2_loss.py            # Stage-2 损失：DiceFocal + 3D soft-clDice
 │   └── stage2_data.py            # Stage-2 3D patch 采样 Dataset（npz + LRU）
@@ -99,6 +100,8 @@ coronary-seg/
 │   ├── train_stage2_tri.sbatch   # Stage-2 训练（三正交起点）
 │   ├── predict_stage2_tri.sbatch # Stage-2 评估（三正交起点）
 │   └── train_stage2.sbatch       # Stage-2 训练作业脚本
+├── tests/
+│   └── test_init_from.py        # --init-from 校验 + BUG-007 机制复现（23 项）
 ├── .kb/                          # 跨会话知识库（实验/bug/决策记录）
 ├── requirements.txt
 └── README.md
@@ -177,7 +180,11 @@ python scripts/train.py --cache-dir /path/to/cache \
 
 `--lr` 建议比初始训练小（如 1e-4 对 3e-4），因为是在已收敛的权重上微调。
 
-验证：`python tests/test_init_from.py`（15 项，不依赖 pytest / monai）
+`--init-from` 对 stage-1（`train.py`）和 stage-2（`train_stage2.py`）都可用，
+公共逻辑在 `src/ckpt_init.py`。
+
+验证：`python tests/test_init_from.py`（23 项，不依赖 pytest；
+其中第 4 组静态检查两个训练脚本都真的接上了，避免只改一个）
 
 ### 4. 推理 + 评估
 

@@ -3,13 +3,19 @@
 scripts/train_stage2.py — stage-2 3D 精修训练入口
 ==================================================================
 复用 stage-1 train.py 的框架（AdamW + CosineAnnealing + best/last +
-resume + overfit-one-batch），只替换三处：
+resume/init-from + overfit-one-batch），只替换三处：
   - build_stage2_model 代替 build_model（残差门控 3D SegResNet）
   - build_stage2_loss  代替 build_loss （DiceFocal + soft-clDice）
   - loss 返回 (total, parts) 元组：反向用 total，日志打印 parts
 
 上真机第一件事：先 --overfit-one-batch，确认 loss 下降、dice 上升，
 再去掉该 flag 上全量。
+
+⚠ --resume 与 --init-from 是两个**不同场景**，不能混用（见 src/ckpt_init.py）：
+  --resume    训练被中途杀掉后接着跑（last_epoch < T_max，scheduler 继续退火）
+  --init-from 已跑满 --epochs 后想再训一段（只借权重，其余全部重建）
+对跑满的 checkpoint 用 --resume 会让 LR 冲到初始值的约 98 倍并摧毁权重。
+本脚本默认 --epochs 80、三正交实验用 30，**跑满是预期结果**，容易踩到。
 
 依赖你的 stage-2 dataloader（返回 {"image":(B,2,P,P,P), "label":(B,1,P,P,P)}）。
 下面从 src.stage2_data 导入 build_stage2_loaders；若你的文件/函数名不同，
@@ -25,6 +31,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.stage2_model import build_stage2_model, count_params
 from src.stage2_loss import build_stage2_loss
+from src.ckpt_init import (validate_init_from, load_init_weights,
+                           add_init_from_arg)
 
 # 你的 stage-2 数据流水线入口。若函数名不同，改这里。
 from src.stage2_data import build_stage2_loaders
@@ -66,8 +74,11 @@ def parse_args():
     # sanity
     p.add_argument("--overfit-one-batch", action="store_true")
     p.add_argument("--steps", type=int, default=200)
-    # resume
-    p.add_argument("--resume", action="store_true")
+    # resume / init-from —— 两个不同场景，见 src/ckpt_init.py
+    p.add_argument("--resume", action="store_true",
+                   help="从 out-dir/last.pth 恢复完整训练状态"
+                        "（用于被 SLURM 上限杀掉后接着跑）")
+    add_init_from_arg(p)
     return p.parse_args()
 
 
@@ -193,6 +204,12 @@ def full_train(model, train_loader, val_loader, loss_fn, device, cfg, use_amp):
         best_dice = ckpt.get("best_dice", -1.0)
         print(f"[resume] 从 epoch {start_epoch} 续，best_dice={best_dice:.4f}")
 
+    # 只借模型权重，optimizer/scheduler/epoch 全部重建。
+    # 与 --resume 互斥（由 validate_init_from 保证），放在 elif 之后是安全的。
+    elif cfg.get("init_from"):
+        load_init_weights(model, cfg["init_from"], device,
+                          cfg["lr"], cfg["epochs"], cfg["out_dir"])
+
     for epoch in range(start_epoch, cfg["epochs"]):
         print(f"\n--- Epoch {epoch+1}/{cfg['epochs']} "
               f"(lr={opt.param_groups[0]['lr']:.2e}) ---")
@@ -219,6 +236,14 @@ def full_train(model, train_loader, val_loader, loss_fn, device, cfg, use_amp):
 def main():
     args = parse_args()
     cfg = build_cfg(args)
+
+    # 参数校验放最前：构建模型/数据要几分钟，用法错了不该等到那时才报
+    try:
+        validate_init_from(cfg.get("init_from"), cfg["out_dir"], cfg.get("resume"))
+    except ValueError as e:
+        print(f"参数错误：{e}", file=sys.stderr)
+        sys.exit(1)
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     use_amp = (device == "cuda") and (not args.no_amp)
     print(f"device={device}  amp={use_amp}")

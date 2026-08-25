@@ -1,36 +1,25 @@
-"""--init-from 的行为验证 + BUG-007 机制复现。
+"""--init-from 的行为验证 + BUG-007 机制复现 + 两个训练脚本的接线检查。
 
 不依赖 pytest，直接运行：
 
     python tests/test_init_from.py
 
-刻意**不 import scripts/train.py**（它会拉起 monai，登录节点/本地未必装），
-而是用 AST 把 validate_init_from 抽出来单独执行 —— 这同时也验证了
-该函数是只依赖 os 的纯函数。
+src/ckpt_init.py 只依赖 os 和 torch（不拉 monai），所以能直接 import。
+两个训练脚本本身在没装 monai 的机器上 import 不了，所以对它们做 AST 静态检查 ——
+重点是确认**两个脚本都真的接上了**，避免只改了一个。
 """
 import ast
 import io
 import os
 import sys
 import tempfile
-import types
 
 import torch
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO)
 
-
-def load_validate_init_from():
-    """从 scripts/train.py 里抽出 validate_init_from，避开重量级 import。"""
-    src = io.open(os.path.join(REPO, "scripts", "train.py"),
-                  encoding="utf-8").read()
-    fn = next(n for n in ast.parse(src).body
-              if isinstance(n, ast.FunctionDef) and n.name == "validate_init_from")
-    mod = types.ModuleType("_extracted")
-    mod.os = os
-    exec(compile(ast.Module([fn], []), "<extracted>", "exec"), mod.__dict__)
-    return mod.validate_init_from
-
+from src.ckpt_init import validate_init_from, pick_state_dict  # noqa: E402
 
 _ok = _fail = 0
 
@@ -53,7 +42,8 @@ def raises(fn, frag):
         return frag in str(e)
 
 
-def test_validation(V, ckpt, src_dir, out_dir):
+def test_validation(ckpt, src_dir, out_dir):
+    V = validate_init_from
     print("\n[1] validate_init_from 校验规则")
     check("不传 init_from 直接放行", V(None, out_dir, False) is None)
     check("正常用法放行", V(ckpt, out_dir, False) is None)
@@ -99,25 +89,44 @@ def test_bug007_mechanism():
         lrs.append(opt2.param_groups[0]["lr"])
     check(f"继续 step 后 LR 不降反升（余弦进下一周期）{lrs[0]:.2e} → {lrs[-1]:.2e}",
           lrs[-1] > lrs[0])
-    check(f"且升到远超初始 lr=3e-4（实测 {lrs[-1]:.2e}，约 {lrs[-1]/3e-4:.0f} 倍）"
+    check(f"且升到远超初始 lr=3e-4（实测 {lrs[-1]:.2e}，约 {lrs[-1] / 3e-4:.0f} 倍）"
           " —— 会摧毁已训好的权重", lrs[-1] > 3e-4 * 10)
 
 
 def test_state_dict_compat(ckpt, tmp):
-    print("\n[3] 权重读取的兼容性（对应 full_train 的 init-from 分支）")
+    print("\n[3] pick_state_dict 的兼容性")
     c = torch.load(ckpt, map_location="cpu", weights_only=False)
-    picked = c["model"] if isinstance(c, dict) and "model" in c else c
-    check("带 'model' 外层时取内层", picked is c["model"])
+    check("带 'model' 外层时取内层", pick_state_dict(c) is c["model"])
 
     raw_p = os.path.join(tmp, "raw.pth")
     torch.save({"w": torch.zeros(3)}, raw_p)
     r = torch.load(raw_p, map_location="cpu", weights_only=False)
-    picked2 = r["model"] if isinstance(r, dict) and "model" in r else r
-    check("裸 state_dict（无 'model' 外层）原样返回", picked2 is r)
+    check("裸 state_dict（无 'model' 外层）原样返回", pick_state_dict(r) is r)
+
+
+def test_scripts_wired():
+    """两个训练脚本都真的接上了 —— 静态检查，避免只改了一个。"""
+    print("\n[4] train.py / train_stage2.py 的接线")
+    want = {"validate_init_from", "load_init_weights", "add_init_from_arg"}
+    for name in ("train.py", "train_stage2.py"):
+        src = io.open(os.path.join(REPO, "scripts", name), encoding="utf-8").read()
+        tree = ast.parse(src)
+        imported = {
+            a.name
+            for n in ast.walk(tree)
+            if isinstance(n, ast.ImportFrom) and n.module == "src.ckpt_init"
+            for a in n.names
+        }
+        check(f"{name} 从 src.ckpt_init 导入三个函数", want <= imported)
+        check(f"{name} 在 main() 里调用 validate_init_from",
+              "validate_init_from(" in src.split("def main(")[-1])
+        check(f"{name} 调用 load_init_weights", "load_init_weights(" in src)
+        # 关键：init-from 分支必须挂在 resume 的 elif 链上，否则两者可能同时生效
+        check(f"{name} 的 init_from 分支挂在 resume 的 elif 链上（保证互斥）",
+              'elif cfg.get("init_from")' in src)
 
 
 def main():
-    V = load_validate_init_from()
     tmp = tempfile.mkdtemp()
     src_dir = os.path.join(tmp, "exp_tri2p5d")
     out_dir = os.path.join(tmp, "exp_continue")
@@ -127,9 +136,10 @@ def main():
     torch.save({"model": {"w": torch.zeros(3)}, "epoch": 59, "val_dice": 0.8135},
                ckpt)
 
-    test_validation(V, ckpt, src_dir, out_dir)
+    test_validation(ckpt, src_dir, out_dir)
     test_bug007_mechanism()
     test_state_dict_compat(ckpt, tmp)
+    test_scripts_wired()
 
     print(f"\n{'=' * 52}\n  通过 {_ok}   失败 {_fail}\n{'=' * 52}")
     return 1 if _fail else 0
