@@ -88,6 +88,30 @@ def corr(a, b):
     return float(np.corrcoef(a, b)[0, 1])
 
 
+def pick_device(pref="auto"):
+    """选设备。
+
+    login 节点上 torch.cuda.is_available() 可能返回 True，但真正把张量搬上去
+    会抛 "CUDA-capable device(s) is/are busy or unavailable"。所以 auto 模式
+    实际做一次搬运测试，失败就回退 CPU，而不是信任那个标志位。
+    """
+    import torch
+
+    if pref == "cpu":
+        return "cpu"
+    if pref == "cuda":
+        return "cuda"
+    if not torch.cuda.is_available():
+        return "cpu"
+    try:
+        torch.zeros(1).to("cuda")
+        return "cuda"
+    except RuntimeError as e:
+        print(f"[device] CUDA 不可用（{type(e).__name__}），回退 CPU。"
+              f"如需 GPU 请用 sbatch slurm/analyse_gate.sbatch 提交作业")
+        return "cpu"
+
+
 # ----------------------------------------------------------------------
 #  以下需要 torch / monai / 实际数据
 # ----------------------------------------------------------------------
@@ -140,6 +164,10 @@ def main():
     ap.add_argument("--n-patch", type=int, default=8)
     ap.add_argument("--max-cases", type=int, default=30)
     ap.add_argument("--thr", type=float, default=0.5)
+    ap.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"),
+                    help="auto 会实际试一次 CUDA 初始化，失败则回退 CPU —— "
+                         "login 节点上 torch.cuda.is_available() 可能返回 True "
+                         "但设备其实不可用")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
 
@@ -153,7 +181,7 @@ def main():
     import torch
     from src.stage2_model import build_stage2_model
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = pick_device(args.device)
     model = build_stage2_model({"init_filters": args.init_filters,
                                 "use_gate": True}).to(device)
     ckpt = torch.load(args.ckpt, map_location=device)
