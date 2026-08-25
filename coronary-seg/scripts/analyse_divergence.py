@@ -73,6 +73,18 @@ def divergence_stats(probs, label, thr=0.5):
     return mean, std, wrong
 
 
+def analysis_roi(mean, label, min_prob=0.05):
+    """限定分析区域：模型有响应处 或 真值处。
+
+    为什么不能用全体素：冠脉占体积不足 1%，其余是三方向一致认定为背景
+    (std=0) 且预测正确的区域。把它们计入会造成两个问题 ——
+      1. std 的分位数大量重复，低位分桶为空 -> nanmean 全 NaN
+      2. AUC 被这些"无争议且正确"的体素主导而虚高，失去意义
+    只在模型有响应或真值所在的区域评估分歧的判别力，才是有信息量的问题。
+    """
+    return (mean >= min_prob) | (label > 0)
+
+
 def bucket_error_rate(std, wrong, n_bins=5):
     """按 std 分位数分桶，给出每桶的错误率。
 
@@ -142,6 +154,9 @@ def main():
     ap.add_argument("--pad-multiple", type=int, default=32)
     ap.add_argument("--max-cases", type=int, default=20)
     ap.add_argument("--n-bins", type=int, default=5)
+    ap.add_argument("--roi-min-prob", type=float, default=0.05,
+                    help="分析区域下限：低于该概率且非真值的体素视为"
+                         "无争议背景，排除在分歧分析之外")
     ap.add_argument("--out-csv", default="runs/exp_tri2p5d/divergence.csv")
     ap.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
     ap.add_argument("--self-test", action="store_true")
@@ -191,6 +206,7 @@ def main():
     print(f"分析 {n} 例\n")
 
     rows, buckets_all, aucs = [], [], []
+    roi_fracs, zero_fracs = [], []
     alpha_metrics = {a: [] for a in ALPHAS}
 
     for i in range(n):
@@ -208,11 +224,18 @@ def main():
                  for ax in args.axes]
         mean, std, wrong = divergence_stats(probs, label, args.thr)
 
-        # ---- A. 分歧是否标记了错误 ----
-        bk = bucket_error_rate(std, wrong, args.n_bins)
+        # ---- A. 分歧是否标记了错误（只在有争议的区域内评估）----
+        roi = analysis_roi(mean, label, args.roi_min_prob)
+        n_roi, n_all = int(roi.sum()), int(roi.size)
+        zero_frac = float((std[roi] == 0).mean()) if n_roi else float("nan")
+        std_r, wrong_r = std[roi], wrong[roi]
+
+        bk = bucket_error_rate(std_r, wrong_r, args.n_bins)
         buckets_all.append([b["err_rate"] for b in bk])
-        a = auc_score(std, wrong)
+        a = auc_score(std_r, wrong_r)
         aucs.append(a)
+        roi_fracs.append(n_roi / n_all)
+        zero_fracs.append(zero_frac)
 
         # ---- B. 自适应阈值 ----
         for alpha in ALPHAS:
@@ -225,9 +248,12 @@ def main():
                  hd95(m, label)))
 
         rows.append({"case": test_rec[i].get("id", i), "auc_std_vs_error": a,
-                     "std_mean": float(std.mean()), "std_max": float(std.max()),
+                     "roi_frac": n_roi / n_all, "std_zero_frac_in_roi": zero_frac,
+                     "std_mean_roi": float(std_r.mean()) if n_roi else float("nan"),
+                     "std_max": float(std.max()),
                      **{f"err_bin{b['bin']}": b["err_rate"] for b in bk}})
-        print(f"  [{i + 1}/{n}] AUC={a:.3f}  std均值={std.mean():.4f}")
+        print(f"  [{i + 1}/{n}] AUC={a:.3f}  ROI={n_roi / n_all:.3%}  "
+              f"ROI内std均值={std_r.mean() if n_roi else float('nan'):.4f}")
 
     os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
     with open(args.out_csv, "w", newline="") as fh:
@@ -239,14 +265,23 @@ def main():
     print("\n" + "=" * 70)
     print("  A. 方向分歧(std)是否标记了 stage-1 的错误？")
     print("=" * 70)
-    bm = np.nanmean(np.array(buckets_all), axis=0)
+    print(f"  分析区域 = (mean >= {args.roi_min_prob}) 或 真值处，"
+          f"平均占全体积 {np.mean(roi_fracs):.2%}")
+    print(f"  该区域内 std 恰为 0 的体素占 {np.nanmean(zero_fracs):.1%}"
+          f"（三方向完全一致）\n")
+    with np.errstate(invalid="ignore"):
+        bm = np.nanmean(np.array(buckets_all, dtype=np.float64), axis=0)
     print(f"  按 std 分位数分 {args.n_bins} 桶，各桶的错误率：")
-    for i, v in enumerate(bm):
-        bar = "#" * int(v * 200)
-        print(f"    第{i + 1}桶(std {'最低' if i == 0 else '最高' if i == len(bm) - 1 else '  中'})"
-              f"  错误率 {v:.4f}  {bar}")
-    if len(bm) >= 2:
-        print(f"\n  最高桶/最低桶 错误率之比 = {bm[-1] / max(bm[0], 1e-9):.1f}")
+    valid = [(i, v) for i, v in enumerate(bm) if np.isfinite(v)]
+    for i, v in valid:
+        lab = "最低" if i == 0 else ("最高" if i == len(bm) - 1 else "  中")
+        print(f"    第{i + 1}桶(std {lab})  错误率 {v:.4f}  {'#' * int(v * 200)}")
+    n_empty = len(bm) - len(valid)
+    if n_empty:
+        print(f"    （{n_empty} 个桶为空：std 取值高度集中，分位数重复）")
+    if len(valid) >= 2:
+        lo, hi = valid[0][1], valid[-1][1]
+        print(f"\n  最高桶/最低桶 错误率之比 = {hi / max(lo, 1e-9):.1f}")
     print(f"  AUC(用 std 预测'此处出错') = {np.nanmean(aucs):.4f}")
     print("  0.5=无判别力；>0.7 说明分歧确实指向了出错位置")
 
@@ -311,7 +346,30 @@ def self_test():
         chk("误传标量列表时被护栏拦下（而非静默到 AUC 才炸）",
             "4D" in str(e))
 
-    print("\n[2] bucket_error_rate")
+    print("\n[2] analysis_roi —— 排除无争议背景")
+    mean_v = np.array([0.9, 0.5, 0.01, 0.01])
+    lab_v = np.array([1, 0, 1, 0], dtype=np.uint8)
+    roi = analysis_roi(mean_v, lab_v, 0.05)
+    chk("高概率处纳入", roi[0] and roi[1])
+    chk("低概率但是真值 -> 纳入（漏检必须能被看到）", roi[2])
+    chk("低概率且非真值 -> 排除（无争议背景）", not roi[3])
+
+    print("\n[3] 空桶不再导致崩溃")
+    # 真实数据里背景 std 恒为 0，分位数大量重复 -> 低位桶为空
+    std_z = np.concatenate([np.zeros(800), np.linspace(0.01, 0.5, 200)])
+    wr = np.zeros(1000, dtype=bool); wr[900:] = True
+    bk_z = bucket_error_rate(std_z, wr, 5)
+    chk("分位数重复时仍返回 n_bins 个桶", len(bk_z) == 5)
+    empty = [b for b in bk_z if b["n"] == 0]
+    chk("空桶的 err_rate 为 nan 而非报错",
+        all(np.isnan(b["err_rate"]) for b in empty))
+    arr = np.array([[b["err_rate"] for b in bk_z]], dtype=np.float64)
+    with np.errstate(invalid="ignore"):
+        bm_z = np.nanmean(arr, axis=0)
+    chk("汇总时 nan 可被 isfinite 过滤（不会 int(nan) 崩）",
+        all(np.isfinite(v) for v in bm_z if np.isfinite(v)))
+
+    print("\n[4] bucket_error_rate")
     std = np.linspace(0, 1, 1000)
     wrong = std > 0.8                       # 只有高 std 处出错
     bk = bucket_error_rate(std, wrong, 5)
@@ -321,7 +379,7 @@ def self_test():
     chk("最低桶错误率为 0", abs(bk[0]["err_rate"]) < 1e-9)
     chk("最高桶错误率最大", bk[-1]["err_rate"] > 0.5)
 
-    print("\n[3] auc_score")
+    print("\n[5] auc_score")
     score = np.array([0.1, 0.2, 0.8, 0.9])
     pos = np.array([False, False, True, True])
     chk("完美区分 AUC=1", abs(auc_score(score, pos) - 1.0) < 1e-9)
@@ -329,7 +387,7 @@ def self_test():
     chk("无正样本返回 nan",
         np.isnan(auc_score(score, np.zeros(4, dtype=bool))))
 
-    print("\n[4] adaptive_threshold_mask")
+    print("\n[6] adaptive_threshold_mask")
     mean = np.array([0.6, 0.6])
     std = np.array([0.0, 0.3])
     m0 = adaptive_threshold_mask(mean, std, 0.5, 0.0)
