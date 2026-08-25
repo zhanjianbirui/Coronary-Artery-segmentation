@@ -151,6 +151,34 @@ sbatch slurm/train_2p5d.sbatch --resume
 
 从 `last.pth` 精确恢复模型 + 优化器 + scheduler + epoch + best_dice。
 
+**⚠ 这只适用于「训练被中途杀掉」。** 如果训练已经跑满 `--epochs`
+（`last.pth` 的 epoch == epochs−1），`--resume` 不但没用，还会**毁掉权重**：
+`CosineAnnealingLR` 的 LR 此时已退火到 0，而 scheduler 的 `state_dict()`
+把 `T_max` 也存了进去，恢复时会把命令行新传的 `--epochs` 静默覆盖回旧值，
+余弦进入下一个周期、LR 一路冲到初始值的约 98 倍（实测 3e-4 → 2.95e-2）。
+
+想在跑满的权重上再训一段，用下面的 `--init-from`。
+
+### 3b. 在已有权重上继续训练（`--init-from`）
+
+```bash
+# 只借模型权重，optimizer / scheduler / epoch / best_dice 全部重建
+python scripts/train.py --cache-dir /path/to/cache \
+    --init-from runs/exp_tri2p5d/best.pth \
+    --out-dir runs/exp_tri2p5d_cont \
+    --epochs 60 --lr 1e-4
+```
+
+两条硬护栏（`validate_init_from`）：
+
+1. **不能与 `--resume` 同用** —— 语义冲突，直接报错
+2. **源 checkpoint 不能位于 `--out-dir` 内** —— 否则训练第一次刷新 `best.pth`
+   就会覆盖掉你拿来做初始化的那份权重。必须写到新目录。
+
+`--lr` 建议比初始训练小（如 1e-4 对 3e-4），因为是在已收敛的权重上微调。
+
+验证：`python tests/test_init_from.py`（15 项，不依赖 pytest / monai）
+
 ### 4. 推理 + 评估
 
 ```bash
@@ -499,6 +527,13 @@ sbatch slurm/train_stage2_tri.sbatch --w-cldice 0 --out-dir runs/stage2_tri_nocl
 - **bfloat16 AMP**：float16 在稀疏前景场景下会梯度溢出致 nan，bf16 动态范围与 fp32 相同，A100 原生支持
 - **梯度安全**：loss 和梯度的双重 nan/inf 检查，非有限时跳过更新，参数永不被污染
 - **断点续训**：原子写 `last.pth`（tmp + rename），4 天 SLURM 上限被杀后 `--resume` 无缝继续
+- **`--resume` 与 `--init-from` 是两个不同场景，不能混用**：
+  `--resume` 恢复完整训练状态，用于**被杀后接着跑**（此时 `last_epoch < T_max`，正确）；
+  `--init-from` 只借模型权重、其余全部重建，用于**已跑满 `--epochs` 后再训一段**。
+  对跑满的 checkpoint 用 `--resume` 会让 LR 冲到初始值的约 98 倍并摧毁权重 ——
+  因为 PyTorch 的 scheduler `state_dict()` 连 `T_max` 一起存，
+  命令行新传的 `--epochs` 会被静默覆盖回旧值，余弦进入下一周期。
+  实测见 `python tests/test_init_from.py`
 - **推理断点续跑**：predict.py 读已有 CSV 跳过已完成病例
 - **三正交融合优于单方向**：同一模型沿三个轴分别推理再取 mean，只在单一方向出现的假阳
   会被平均掉，Betti-0 误差在后处理前就从 23.69 降到 14.51
