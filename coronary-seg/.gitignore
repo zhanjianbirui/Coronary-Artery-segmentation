@@ -1,5 +1,33 @@
+# ---- 系统 ----
 .DS_Store
 **/.DS_Store
 
-# Claude 知识库（本地使用，不提交）
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# ---- 本地知识库（跨会话记录，不进版本控制）----
 .kb/
+
+# ---- 训练产物 ----
+# 只黑名单过程产物，不用 ! 白名单 —— Git 的目录递归语义让 ! 规则很难写对
+# （父目录一旦被排除，其中的 ! 规则就不再生效）。
+# runs/**/*.csv 是评估结果，论文要引用，不在此列表中，因此保留入库。
+runs/**/*.out
+runs/**/*.err
+runs/**/*.log
+runs/**/*.yaml
+runs/**/*.png
+*.pth
+*.pth.tmp*
+
+# ---- 派生数据 ----
+# 切片索引由 build_slice_index 自动重建（首次遍历病例较慢但会缓存）
+splits/sidx_*.json
+# stage-2 的 npz 在 /net/scratch 下，不在仓库内
+
+# ---- 编辑器 ----
+.vscode/
+.idea/

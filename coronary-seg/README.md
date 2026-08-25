@@ -55,59 +55,70 @@
 
 ## 项目结构
 
+> 脚本按**用途**分组如下。目录里是平铺的，但实际入口只有这几类——
+> 日常只会用到「主流程」那几个，其余是分析与一次性工具。
+
+### 主流程（按执行顺序）
+
+| 步骤 | 脚本 | SLURM |
+|------|------|-------|
+| 1. 下载数据 + 生成划分 | `scripts/prepare_data.py` | — |
+| 2. 训练 Stage-1（2.5D 三正交） | `scripts/train.py` | `slurm/train_2p5d.sbatch` |
+| 3. 推理 + 评估 Stage-1 | `scripts/predict_tri.py` | `slurm/predict_tri_mean050_v2.sbatch` |
+| 4. 生成 Stage-2 数据 | `scripts/stage2_prepare.py` | `slurm/stage2_prep_tri.sbatch` |
+| 5. 训练 Stage-2（精修） | `scripts/train_stage2.py` | `slurm/train_stage2_tri.sbatch` |
+| 6. 推理 + 评估 Stage-2 | `scripts/predict_stage2.py` | `slurm/predict_stage2_tri.sbatch` |
+| 7. 方案间显著性比较 | `scripts/compare_runs.py` | —（login 节点即可） |
+
+### 分析与诊断
+
+| 脚本 | 回答什么问题 |
+|------|-------------|
+| `scripts/analyse_gate.py` | 残差门控是否按设计工作？（→ 发现它有害） |
+| `scripts/analyse_divergence.py` | 三方向分歧是否标记了错误？能否用于自适应阈值 |
+| `scripts/analyze_cases.py` | 逐病例诊断，找失败模式 |
+| `scripts/scout_bbox.py` | 统计冠脉外接框，用于确定裁剪尺寸 |
+| `scripts/check_data.py` | 数据完整性检查 |
+| `scripts/vis_predict.py` / `vis_slices.py` | 可视化 |
+
+### 参数扫描
+
+`sweep_threshold.py`（二值化阈值）· `sweep_postproc.py`（最小分量/端点重连）
+· `sweep_spatial_prior.py`（空间先验的距离与锚数）
+
+### 核心模块 `src/`
+
+| 模块 | 职责 |
+|------|------|
+| `data.py` | 预处理链、切片索引、缓存、类别均衡采样 |
+| `model.py` | Stage-1 网络（2D SegResNet / UNet） |
+| `engine.py` | 训练/验证循环，bf16 AMP，梯度 nan 保护 |
+| `stage2_data.py` | Stage-2 的 3D patch 采样（支持 2/4 通道） |
+| `stage2_model.py` | Stage-2 残差精修网络 |
+| `stage2_loss.py` | DiceFocal + soft-clDice |
+| `ckpt_init.py` | `--resume` 与 `--init-from` 的公共逻辑（见 BUG-007） |
+| `spatial_prior.py` | 空间先验分量过滤（探索但未采用） |
+| `smart_reconnect.py` | 端点重连（实验否决，默认关闭） |
+| `config.py` / `utils.py` | YAML 配置系统，仅 `prepare_data.py` 使用 |
+
+### 其余目录
+
 ```
-coronary-seg/
-├── configs/default.yaml          # 超参数配置（YAML，prepare_data.py 使用）
-├── src/
-│   ├── config.py                 # YAML 配置加载（dataclass + dotted-key 覆盖）
-│   ├── utils.py                  # 种子 / 日志 / 统计
-│   ├── data.py                   # 三方向2.5D数据流水线 / 切片索引 / DataLoader
-│   ├── model.py                  # 模型工厂（SegResNet / UNet）+ 损失
-│   ├── engine.py                 # 训练/验证循环（bfloat16 AMP + 梯度安全检查）
-│   ├── checkpoint.py             # 断点续训（原子写）
-│   ├── smart_reconnect.py        # 方向感知端点重连（实验证明关闭更优）
-│   ├── spatial_prior.py          # 空间先验分量过滤（删离血管树很远的大块假阳）
-│   ├── ckpt_init.py              # --resume / --init-from 的公共逻辑（见 BUG-007）
-│   ├── stage2_model.py           # Stage-2 残差门控 3D SegResNet
-│   ├── stage2_loss.py            # Stage-2 损失：DiceFocal + 3D soft-clDice
-│   └── stage2_data.py            # Stage-2 3D patch 采样 Dataset（npz + LRU）
-├── scripts/
-│   ├── prepare_data.py           # 下载 ImageCAS + 生成划分
-│   ├── train.py                  # 训练入口（argparse CLI）
-│   ├── predict.py                # 单轴推理 + 后处理 + 拓扑评估
-│   ├── predict_tri.py            # 三正交方向融合推理（sweep / full 两种模式）
-│   ├── stage2_prepare.py         # 用 stage-1 生成 stage-2 训练数据（npz）
-│   ├── train_stage2.py           # Stage-2 训练入口
-│   ├── predict_stage2.py         # Stage-2 推理 + 评估（滑窗）
-│   ├── scout_bbox.py             # 血管边界框侦察（确定裁剪尺寸）
-│   ├── sweep_postproc.py         # 后处理参数扫描
-│   ├── sweep_spatial_prior.py    # 空间先验参数扫描（max_dist_mm × n_anchor）
-│   ├── compare_runs.py           # 多方案逐病例配对显著性比较（Wilcoxon+Holm）
-│   ├── sweep_threshold.py        # 预测阈值扫描
-│   ├── check_data.py             # 数据核对
-│   ├── vis_slices.py             # 切片可视化
-│   ├── vis_predict.py            # 预测结果可视化
-│   └── analyze_cases.py          # 逐病例分析
-├── slurm/
-│   ├── train.sbatch              # 训练作业脚本
-│   ├── train_2p5d.sbatch         # 2.5D 训练作业脚本
-│   ├── predict_tta.sbatch        # TTA 推理作业脚本
-│   ├── predict_tri_mean050.sbatch# 三正交融合全量推理作业脚本
-│   ├── predict_tri_mean050_v2.sbatch # 同上，用当前 best.pth 重跑
-│   ├── sweep_spatial_prior.sbatch# 空间先验扫描作业脚本
-│   ├── stage2_prep_test.sbatch   # Stage-2 数据生成（单轴起点）
-│   ├── stage2_prep_tri.sbatch    # Stage-2 数据生成（三正交起点）
-│   ├── train_stage2_tri.sbatch   # Stage-2 训练（三正交起点）
-│   ├── predict_stage2_tri.sbatch # Stage-2 评估（三正交起点）
-│   └── train_stage2.sbatch       # Stage-2 训练作业脚本
-├── tests/
-│   └── test_init_from.py        # --init-from 校验 + BUG-007 机制复现（23 项）
-├── .kb/                          # 跨会话知识库（不入版本控制）
-│   ├── INDEX.md                 #   唯一必读入口（≤100 行）
-│   ├── results.md               #   结论单一事实来源 —— 引用数字前先读这个
-│   └── ...                      #   experiments / bugs / decisions / logs
-├── requirements.txt
-└── README.md
+configs/default.yaml   # YAML 配置，仅 prepare_data.py 与旧 train.sbatch 使用
+splits/                # 数据划分 split.json（切片索引 sidx_*.json 自动生成，不入库）
+runs/                  # 训练产物。只有 *.csv（评估结果）入库，日志与权重不入库
+tests/                 # 不依赖 pytest，直接 python tests/xxx.py 运行
+.kb/                   # 跨会话知识库（不入库）
+```
+
+### 测试
+
+```bash
+python tests/test_init_from.py     # --resume / --init-from 的语义与 BUG-007 机制
+python tests/test_multi_view.py    # 多视角 stage-2 的跨文件接线一致性
+python src/spatial_prior.py        # 模块自测
+python scripts/analyse_gate.py --self-test
+python scripts/analyse_divergence.py --self-test
 ```
 
 ## 使用流程
