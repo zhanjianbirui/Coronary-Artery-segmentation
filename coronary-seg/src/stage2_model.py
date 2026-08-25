@@ -73,8 +73,16 @@ class ResidualGatedSegResNet(nn.Module):
         nn.init.zeros_(self.delta_head.weight)
         nn.init.zeros_(self.delta_head.bias)
 
-    def forward(self, x):
-        # x: (B,2,D,H,W)，通道 prob_channel 是 stage1 概率
+    def forward(self, x, return_parts=False):
+        """
+        x: (B,2,D,H,W)，通道 prob_channel 是 stage1 概率。
+
+        return_parts=False（默认）: 只返回 final_logit，与训练/推理路径完全一致。
+        return_parts=True: 额外返回 {"gate", "delta"} 供分析使用 ——
+            gate 是逐体素的修正强度 [0,1]，delta 是修正量。
+            用于检验门控是否如设计预期地"只在需要处激活"（见 scripts/analyse_gate.py）。
+            不含门控时 gate 为 None。
+        """
         prob = x[:, self.prob_channel:self.prob_channel + 1]     # (B,1,...)
         stage1_logit = prob_to_logit(prob)
 
@@ -84,7 +92,11 @@ class ResidualGatedSegResNet(nn.Module):
             gate = torch.sigmoid(self.gate_head(feat))           # (B,1,...)
             final_logit = stage1_logit + gate * delta
         else:
+            gate = None
             final_logit = stage1_logit + delta
+
+        if return_parts:
+            return final_logit, {"gate": gate, "delta": delta}
         return final_logit
 
 
