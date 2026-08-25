@@ -13,8 +13,18 @@
 # 注意：本作业**不修改任何既有推理路径**，只是把 predict_tri_probs
 # 已算出、随后被 mean 丢弃的信息捡回来分析。
 #
+# 默认使用**分层子集**（12 长尾 + 12 对照），与 sweep_spatial_prior.sbatch
+# 的子集口径一致，两个实验可直接对照。
+#
+# !! 为什么不用 --max-cases N !!
+#   前 N 例取样会系统性遗漏长尾病例（它们排在后面），对 HD95/Betti-0
+#   这类由少数极端病例主导的指标不可信。EXP-010 vs EXP-013 上，
+#   仅子集构成不同就使最优参数的排序完全反转。
+#   首轮本作业用了 --max-cases 20，基线 HD95 只有 16.65，
+#   而全量是 20.53 —— 差了近 4mm，B 部分的结论因此不可用。
+#
 # 提交: sbatch slurm/analyse_divergence.sbatch
-# 加例: sbatch slurm/analyse_divergence.sbatch --max-cases 40
+# 改用前 N 例（不推荐）: sbatch slurm/analyse_divergence.sbatch --max-cases 40
 # ============================================================
 #SBATCH --job-name=diverg
 #SBATCH --account=<your-account>
@@ -38,8 +48,13 @@ PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
 cd "$PROJECT_DIR" || exit 1
 export PYTHONPATH=.
 
+# 与 sweep_spatial_prior.sbatch 完全相同的分层子集，保证两实验口径一致
+TAIL_CASES="741 630 655 931 595 728 447 771 184 415 466 493"
+CTRL_CASES="936 761 764 1000 916 5 69 908 790 941 727 203"
+
 echo "作业 $SLURM_JOB_ID 在 $(hostname) 启动"
 echo "透传参数: $*"
+echo "分层子集: 12 长尾 + 12 对照 = 24 例"
 python -c "import torch;c=torch.load('runs/exp_tri2p5d/best.pth',map_location='cpu',weights_only=False);print('ckpt epoch=',c['epoch'],'val_dice=%.4f'%c['val_dice'])"
 
 # 与主流程完全同口径：同一 ckpt、同 axes、同 thr、同 min_voxels
@@ -49,8 +64,8 @@ python -u scripts/analyse_divergence.py \
     --axes 0 1 2 \
     --thr 0.50 \
     --min-voxels 300 \
-    --max-cases 20 \
-    --out-csv runs/exp_tri2p5d/divergence.csv \
+    --case-ids $TAIL_CASES $CTRL_CASES \
+    --out-csv runs/exp_tri2p5d/divergence_strat.csv \
     --device auto \
     "$@"
 

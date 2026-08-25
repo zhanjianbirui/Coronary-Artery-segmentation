@@ -152,7 +152,13 @@ def main():
     ap.add_argument("--min-voxels", type=int, default=300)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--pad-multiple", type=int, default=32)
-    ap.add_argument("--max-cases", type=int, default=20)
+    ap.add_argument("--max-cases", type=int, default=20,
+                    help="全量模式取前 N 例。⚠️ 前 N 例取样对 HD95/Betti-0 这类"
+                         "长尾指标不可信（长尾病例排在后面），涉及这些指标的"
+                         "结论请改用 --case-ids 指定分层子集")
+    ap.add_argument("--case-ids", type=str, nargs="*", default=[],
+                    help="指定要评估的 case id（与 sweep_spatial_prior 的分层"
+                         "子集口径一致时，两个实验可直接对比）")
     ap.add_argument("--n-bins", type=int, default=5)
     ap.add_argument("--roi-min-prob", type=float, default=0.05,
                     help="分析区域下限：低于该概率且非真值的体素视为"
@@ -177,7 +183,8 @@ def main():
     # 它有 if __name__ == "__main__" 保护，import 不会触发 argparse。
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from predict_tri import (predict_tri_probs, postprocess, dice_coef,
-                             cldice_coef, betti0_error, hd95)
+                             cldice_coef, betti0_error, hd95,
+                             select_case_indices)
 
     device = args.device
     if device == "auto":
@@ -202,14 +209,21 @@ def main():
     _, _, test_rec = load_split(args.split_json)
     cache = PersistentDataset(data=test_rec, transform=preprocess,
                               cache_dir=args.cache_dir)
-    n = min(args.max_cases, len(test_rec)) if args.max_cases else len(test_rec)
-    print(f"分析 {n} 例\n")
+    if args.case_ids:
+        idxs = select_case_indices(test_rec, args.case_ids, 0, 0)
+        print(f"分析 {len(idxs)} 例（指定 case id，分层子集）\n")
+    else:
+        idxs = select_case_indices(test_rec, [], 0, args.max_cases)
+        print(f"分析 {len(idxs)} 例（前 N 例）")
+        print("  ⚠️ 前 N 例取样对 HD95/Betti-0 不可信，长尾病例排在后面。"
+              "B 部分的结论请以分层子集为准\n")
+    n = len(idxs)
 
     rows, buckets_all, aucs = [], [], []
     roi_fracs, zero_fracs = [], []
     alpha_metrics = {a: [] for a in ALPHAS}
 
-    for i in range(n):
+    for seq, i in enumerate(idxs, 1):
         item = cache[i]
         image = item["image"]
         label = np.asarray(item["label"])[0].astype(np.uint8)
@@ -252,7 +266,7 @@ def main():
                      "std_mean_roi": float(std_r.mean()) if n_roi else float("nan"),
                      "std_max": float(std.max()),
                      **{f"err_bin{b['bin']}": b["err_rate"] for b in bk}})
-        print(f"  [{i + 1}/{n}] AUC={a:.3f}  ROI={n_roi / n_all:.3%}  "
+        print(f"  [{seq}/{n}] case {test_rec[i].get('id', i)}  AUC={a:.3f}  ROI={n_roi / n_all:.3%}  "
               f"ROI内std均值={std_r.mean() if n_roi else float('nan'):.4f}")
 
     os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
