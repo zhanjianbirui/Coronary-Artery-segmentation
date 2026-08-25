@@ -102,7 +102,10 @@ coronary-seg/
 │   └── train_stage2.sbatch       # Stage-2 训练作业脚本
 ├── tests/
 │   └── test_init_from.py        # --init-from 校验 + BUG-007 机制复现（23 项）
-├── .kb/                          # 跨会话知识库（实验/bug/决策记录）
+├── .kb/                          # 跨会话知识库（不入版本控制）
+│   ├── INDEX.md                 #   唯一必读入口（≤100 行）
+│   ├── results.md               #   结论单一事实来源 —— 引用数字前先读这个
+│   └── ...                      #   experiments / bugs / decisions / logs
 ├── requirements.txt
 └── README.md
 ```
