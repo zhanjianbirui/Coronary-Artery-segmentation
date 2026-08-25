@@ -8,6 +8,7 @@ scripts/stage2_prepare.py — 阶段2训练数据准备
 到磁盘，供阶段2的3D精修网络训练时直接加载。
 
 每个病例存一个 .npz：{prob, image, label}，均为 (H,W,D)。
+加 --save-views 时另存 {p0,p1,p2}（三个方向各自的概率），体积约 3 倍。
 
 支持两种阶段1推理方式：
   - 默认（单轴）：沿 axis=2 逐层推理，与最早的 stage-2 数据一致
@@ -47,7 +48,7 @@ from monai.data import PersistentDataset
 # 复用阶段1的概率推理（含padding、TTA可选）
 from scripts.predict import pad_to_multiple_2d
 # 三正交逐轴推理+即时融合（内存友好，不同时保留三个概率体）
-from scripts.predict_tri import predict_tri_fused
+from scripts.predict_tri import predict_tri_fused, predict_tri_probs
 
 
 @torch.no_grad()
@@ -125,6 +126,10 @@ def parse_args():
                    help="融合方式，实验证明 mean 明显优于 max")
     p.add_argument("--batch", type=int, default=16,
                    help="逐层推理的 batch；三正交大切片易 OOM，建议 1")
+    p.add_argument("--save-views", action="store_true",
+                   help="除融合概率外，另存三个方向各自的概率体 p0/p1/p2。"
+                        "npz 体积约 3 倍，用于训练多视角 stage-2。"
+                        "需与 --tri 同用")
     p.add_argument("--max-px-per-batch", type=int, default=4_000_000,
                    help="batch×平面像素上限，防大切片爆显存；三正交建议 500000")
     return p.parse_args()
@@ -179,7 +184,25 @@ def main():
             vol = cache[ci]
             image3d = np.asarray(vol["image"])[0].astype(np.float16)  # (H,W,D)
             label = np.asarray(vol["label"])[0].astype(np.uint8)
-            if args.tri:
+            extra = {}
+            if args.tri and args.save_views:
+                # 保留三个方向各自的概率体，而非只存融合结果。
+                # 动机：mean 融合会丢弃方向间分歧，而该分歧携带错误位置的
+                # 信息（EXP-018：AUC 0.64）。存下来才能让 stage-2 自行学习
+                # 如何融合，而不是用人工规则。
+                # 代价：npz 体积约为单概率版的 3 倍。
+                probs = predict_tri_probs(
+                    model, np.asarray(vol["image"]), args.k, device,
+                    axes=tuple(args.axes), batch=args.batch,
+                    pad_multiple=args.pad_multiple)
+                views = [probs[ax].astype(np.float16) for ax in args.axes]
+                # 同时存融合结果，使同一份数据既能训练多视角模型，
+                # 也能复现既有的 2 通道结果（口径完全一致）
+                prob = np.mean([v.astype(np.float32) for v in views],
+                               axis=0).astype(np.float16)
+                extra = {f"p{i}": v for i, v in enumerate(views)}
+                del probs, views
+            elif args.tri:
                 fused = predict_tri_fused(
                     model, np.asarray(vol["image"]), args.k, device,
                     axes=tuple(args.axes), methods=(args.fuse,),
@@ -192,7 +215,8 @@ def main():
                                     args.k, device,
                                     pad_multiple=args.pad_multiple
                                     ).astype(np.float16)
-            save_npz_atomic(out_path, image=image3d, prob=prob, label=label)
+            save_npz_atomic(out_path, image=image3d, prob=prob, label=label,
+                            **extra)
             print(f"  [{ci+1}/{len(recs)}] {cid} 存储完成 "
                   f"shape={image3d.shape}")
             del image3d, label, prob, vol

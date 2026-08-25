@@ -47,16 +47,22 @@ class ResidualGatedSegResNet(nn.Module):
     """
     def __init__(self, init_filters=16, blocks_down=(1, 2, 2, 4),
                  blocks_up=(1, 1, 1), dropout=0.0, use_gate=True,
-                 prob_channel=1):
+                 prob_channel=1, in_channels=2, prob_channels=None):
         super().__init__()
         self.use_gate = use_gate
-        self.prob_channel = prob_channel   # 输入里哪个通道是 stage1 概率
+        self.prob_channel = prob_channel   # 兼容旧配置：单个概率通道的下标
+
+        # prob_channels：哪些输入通道是 stage-1 概率。
+        # 2 通道 [image, prob] 时为 (1,)；
+        # 4 通道 [image, p0, p1, p2] 时为 (1,2,3) —— 残差基准取三者平均，
+        # 与融合后再送入的方案保持同一起点，使「是否保留方向分歧」成为唯一变量。
+        self.prob_channels = tuple(prob_channels) if prob_channels else (prob_channel,)
 
         # backbone：SegResNet 输出 init_filters 通道的特征
         # 用 out_channels=init_filters 拿特征，再自己接 delta/gate 头
         self.backbone = SegResNet(
             spatial_dims=3,
-            in_channels=2,
+            in_channels=in_channels,
             out_channels=init_filters,
             init_filters=init_filters,
             blocks_down=blocks_down,
@@ -83,7 +89,13 @@ class ResidualGatedSegResNet(nn.Module):
             用于检验门控是否如设计预期地"只在需要处激活"（见 scripts/analyse_gate.py）。
             不含门控时 gate 为 None。
         """
-        prob = x[:, self.prob_channel:self.prob_channel + 1]     # (B,1,...)
+        # 残差基准：单概率通道时直接取它；多通道时取平均（等价于 mean 融合），
+        # 这样 4 通道方案与 2 通道方案的起点完全相同。
+        if len(self.prob_channels) == 1:
+            c = self.prob_channels[0]
+            prob = x[:, c:c + 1]                                 # (B,1,...)
+        else:
+            prob = x[:, self.prob_channels, ...].mean(dim=1, keepdim=True)
         stage1_logit = prob_to_logit(prob)
 
         feat = self.backbone(x)                                  # (B,F,...)
@@ -101,13 +113,25 @@ class ResidualGatedSegResNet(nn.Module):
 
 
 def build_stage2_model(cfg):
+    """按 cfg 构建。默认 2 通道 [image, prob]，与既有 checkpoint 完全兼容。
+
+    多视角模式（cfg["multi_view"]=True）：4 通道 [image, p0, p1, p2]，
+    残差基准为三者平均。见 src/stage2_data.py 的同名开关。
+    """
+    if cfg.get("multi_view"):
+        in_ch = cfg.get("in_channels", 4)
+        prob_ch = tuple(cfg.get("prob_channels", range(1, in_ch)))
+    else:
+        in_ch = cfg.get("in_channels", 2)
+        prob_ch = (cfg.get("prob_channel", 1),)
     return ResidualGatedSegResNet(
         init_filters=cfg.get("init_filters", 16),
         blocks_down=tuple(cfg.get("blocks_down", (1, 2, 2, 4))),
         blocks_up=tuple(cfg.get("blocks_up", (1, 1, 1))),
         dropout=cfg.get("dropout", 0.0),
         use_gate=cfg.get("use_gate", True),
-        prob_channel=cfg.get("prob_channel", 1),
+        in_channels=in_ch,
+        prob_channels=prob_ch,
     )
 
 

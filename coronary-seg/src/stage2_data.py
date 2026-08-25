@@ -19,13 +19,17 @@ from torch.utils.data import Dataset, DataLoader
 
 class Stage2PatchDataset(Dataset):
     def __init__(self, data_dir, patch_size=128, pos_ratio=0.8,
-                 samples_per_case=8, train=True):
+                 samples_per_case=8, train=True, multi_view=False):
         """
         data_dir: 含 <id>.npz 的目录（如 stage2/train）
         patch_size: 3D patch 边长
         pos_ratio: patch 中心落在前景的比例
         samples_per_case: 每个病例每个 epoch 采几个 patch
+        multi_view: True 时读 npz 里的 p0/p1/p2 三个方向概率，输出 4 通道
+                    [image, p0, p1, p2]；False（默认）读融合后的 prob，
+                    输出 2 通道 [image, prob]，与既有 checkpoint 兼容
         """
+        self.multi_view = multi_view
         self.files = sorted(glob.glob(os.path.join(data_dir, "*.npz")))
         assert len(self.files) > 0, f"{data_dir} 下没有 npz"
         self.P = patch_size
@@ -45,8 +49,18 @@ class Stage2PatchDataset(Dataset):
             return self._cache[fpath]
         d = np.load(fpath)
         img = d["image"].astype(np.float32)   # (H,W,D)
-        prob = d["prob"].astype(np.float32)
         lab = d["label"].astype(np.uint8)
+
+        # 多视角模式：npz 里存的是三个方向的概率 p0/p1/p2 而非融合后的 prob。
+        # 向后兼容：旧 npz 只有 prob 时退回单通道，无需重新生成数据。
+        if self.multi_view and all(k in d for k in ("p0", "p1", "p2")):
+            prob = np.stack([d["p0"], d["p1"], d["p2"]], axis=0).astype(np.float32)
+        elif self.multi_view:
+            raise KeyError(
+                f"{fpath} 不含 p0/p1/p2。多视角模式需要用 "
+                f"stage2_prepare.py --save-views 重新生成数据。")
+        else:
+            prob = d["prob"].astype(np.float32)   # (H,W,D)
         self._cache[fpath] = (img, prob, lab)
         self._cache_order.append(fpath)
         while len(self._cache_order) > self._cache_max:
@@ -90,24 +104,31 @@ class Stage2PatchDataset(Dataset):
         img, prob, lab = self._load(fpath)
         center = self._sample_center(lab)
         img_p = self._crop(img, center)
-        prob_p = self._crop(prob, center)
         lab_p = self._crop(lab, center)
-        # 2通道输入: [原图, 阶段1概率]
-        x = np.stack([img_p, prob_p], axis=0).astype(np.float32)  # (2,P,P,P)
+        if prob.ndim == 4:      # 多视角: (3,H,W,D)
+            views = [self._crop(prob[v], center) for v in range(prob.shape[0])]
+            # 4 通道输入: [原图, p0, p1, p2]
+            x = np.stack([img_p] + views, axis=0).astype(np.float32)
+        else:
+            prob_p = self._crop(prob, center)
+            # 2 通道输入: [原图, 阶段1概率]
+            x = np.stack([img_p, prob_p], axis=0).astype(np.float32)
         y = lab_p[None].astype(np.float32)                        # (1,P,P,P)
         return {"image": torch.from_numpy(x),
                 "label": torch.from_numpy(y)}
 
 
 def build_stage2_loaders(cfg):
+    mv = cfg.get("multi_view", False)
     train_ds = Stage2PatchDataset(
         os.path.join(cfg["data_dir"], "train"),
         patch_size=cfg["patch_size"], pos_ratio=cfg["pos_ratio"],
-        samples_per_case=cfg["samples_per_case"], train=True)
+        samples_per_case=cfg["samples_per_case"], train=True, multi_view=mv)
     val_ds = Stage2PatchDataset(
         os.path.join(cfg["data_dir"], "val"),
         patch_size=cfg["patch_size"], pos_ratio=cfg["pos_ratio"],
-        samples_per_case=max(2, cfg["samples_per_case"] // 2), train=False)
+        samples_per_case=max(2, cfg["samples_per_case"] // 2), train=False,
+        multi_view=mv)
 
     nw = cfg["num_workers"]
     train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"],

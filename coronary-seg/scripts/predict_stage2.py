@@ -146,7 +146,15 @@ def load_npz(path):
     prob = np.squeeze(prob)
     if label is not None:
         label = np.squeeze(label)
-    return image, prob, label
+
+    # 多视角数据（stage2_prepare --save-views）另存了三个方向各自的概率。
+    # 注意 prob_key 的候选里也有 "p1"，但 "prob" 排在前面会先匹配，
+    # 因此融合概率与方向概率不会混淆。
+    views = None
+    if all(k in keys for k in ("p0", "p1", "p2")):
+        views = np.stack([np.squeeze(np.asarray(d[k]).astype(np.float32))
+                          for k in ("p0", "p1", "p2")], axis=0)
+    return image, prob, label, views
 
 
 def _case_id_from_path(path):
@@ -158,9 +166,13 @@ def _case_id_from_path(path):
 # 推理一个 case
 # ===============================================================
 @torch.no_grad()
-def infer_case(model, image, prob, device, roi, overlap, use_amp, sw_batch=2):
-    # 组 2 通道输入 (1,2,D,H,W)
-    x = np.stack([image, prob], axis=0)[None]              # (1,2,D,H,W)
+def infer_case(model, image, prob, device, roi, overlap, use_amp, sw_batch=2,
+               views=None):
+    """views 非 None 时组 4 通道 [image,p0,p1,p2]，否则 2 通道 [image,prob]。"""
+    if views is not None:
+        x = np.concatenate([image[None], views], axis=0)[None]  # (1,4,D,H,W)
+    else:
+        x = np.stack([image, prob], axis=0)[None]               # (1,2,D,H,W)
     xt = torch.as_tensor(x, dtype=torch.float32, device=device)
 
     def _pred(patch):
@@ -185,6 +197,8 @@ def parse_args():
                    help="匹配 test npz 的通配（如只测子集可改）")
     p.add_argument("--init-filters", type=int, default=16)
     p.add_argument("--no-gate", action="store_true")
+    p.add_argument("--multi-view", action="store_true",
+                   help="4 通道 [image,p0,p1,p2] 输入，需 npz 含 p0/p1/p2")
     p.add_argument("--roi", type=int, default=128)
     p.add_argument("--overlap", type=float, default=0.5)
     p.add_argument("--sw-batch", type=int, default=2)
@@ -203,7 +217,8 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     use_amp = (device == "cuda") and (not args.no_amp)
 
-    cfg = {"init_filters": args.init_filters, "use_gate": not args.no_gate}
+    cfg = {"init_filters": args.init_filters, "use_gate": not args.no_gate,
+           "multi_view": args.multi_view}
     model = build_stage2_model(cfg).to(device)
     ckpt = torch.load(args.ckpt, map_location=device)
     model.load_state_dict(ckpt["model"])
@@ -230,7 +245,9 @@ def main():
     for i, path in enumerate(files):
         cid = _case_id_from_path(path)
         try:
-            image, prob, label = load_npz(path)
+            image, prob, label, views = load_npz(path)
+            if not args.multi_view:
+                views = None    # 未开多视角时忽略，保证与旧结果一致
             if label is None:
                 print(f"[{i+1}/{len(files)}] {cid} 无 label，跳过评估")
                 continue
@@ -242,7 +259,8 @@ def main():
 
             # stage-2 精修
             prob2 = infer_case(model, image, prob, device, args.roi,
-                               args.overlap, use_amp, args.sw_batch)
+                               args.overlap, use_amp, args.sw_batch,
+                               views=views)
             s2 = (prob2 > args.thr).astype(np.uint8)
             s2_pp = postprocess(s2, args.min_voxels, args.max_gap)
             m_s2 = evaluate_case(s2_pp, label)

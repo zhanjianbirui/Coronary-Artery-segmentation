@@ -78,6 +78,11 @@ def parse_args():
     p.add_argument("--resume", action="store_true",
                    help="从 out-dir/last.pth 恢复完整训练状态"
                         "（用于被 SLURM 上限杀掉后接着跑）")
+    p.add_argument("--multi-view", action="store_true",
+                   help="用三个方向各自的概率作输入（4 通道 [image,p0,p1,p2]）"
+                        "而非融合后的 prob（2 通道）。需要数据由 "
+                        "stage2_prepare.py --save-views 生成。"
+                        "残差基准仍为三者平均，故与 2 通道方案起点相同")
     add_init_from_arg(p)
     return p.parse_args()
 
