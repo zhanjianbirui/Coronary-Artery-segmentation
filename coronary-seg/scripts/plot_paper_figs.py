@@ -20,11 +20,14 @@ import argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.figs import data
+from scripts.figs import volumes
 
 
 FIGURES = {
-    "fig6": ("fig6_distributions", "Fig. 6 逐病例分布（§3.2）"),
-    "fig7": ("fig7_ablation", "Fig. 7 Stage-2 消融（§3.3）"),
+    "fig1": ("fig1_problem", "Fig. 1 问题引入（§1.1）"),
+    "fig5": ("fig5_qualitative", "定性对比（§3.2）"),
+    "fig6": ("fig6_distributions", "逐病例分布（§3.2）"),
+    "fig7": ("fig7_ablation", "Stage-2 消融（§3.3）"),
 }
 
 
@@ -48,8 +51,10 @@ def main():
         modname, desc = FIGURES[key]
         try:
             mod = __import__(f"scripts.figs.{modname}", fromlist=["build"])
-            fig = mod.build()
-        except data.MissingCsv as e:
+            built = mod.build()
+            # fig1 的 build 还返回实算出来的分支统计，顺便打印出来供图注引用
+            fig, extra = built if isinstance(built, tuple) else (built, None)
+        except (data.MissingCsv, volumes.MissingVolume) as e:
             skipped.append((key, str(e)))
             continue
 
@@ -59,6 +64,10 @@ def main():
             fig.savefig(out[:-4] + ".png", dpi=200)
         size = os.path.getsize(out) / 1024
         print(f"[完成] {desc}\n         → {out}  ({size:.0f} KB)")
+        if extra:
+            print(f"         分支实测：占血管 {100*extra['frac_vessel']:.1f}%、"
+                  f"占全体积 {100*extra['frac_volume']:.4f}%；"
+                  f"删掉后 Dice {extra['dice']:.4f} clDice {extra['cldice']:.4f}")
         ok.append(key)
 
     if skipped:

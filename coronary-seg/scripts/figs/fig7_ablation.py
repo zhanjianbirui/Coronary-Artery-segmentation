@@ -81,13 +81,15 @@ def panel(ax, metric, title, higher_better, fmt, show_ylabels):
 
 def build():
     apply_style()
-    fig, axes = plt.subplots(1, 4, figsize=(TEXTWIDTH_IN, 1.85),
+    fig, axes = plt.subplots(1, 4, figsize=(TEXTWIDTH_IN, 2.0),
                              constrained_layout=True)
     for i, (metric, title, hb, fmt) in enumerate(METRICS):
         panel(axes[i], metric, title, hb, fmt, show_ylabels=(i == 0))
 
     base_line = plt.Line2D([], [], color=GREY, linewidth=0.8,
                            linestyle=(0, (3, 2)), label="Stage-1 baseline (tri-axial)")
-    fig.legend(handles=[base_line], loc="lower center", ncol=1,
-               fontsize=6.5, bbox_to_anchor=(0.5, -0.06))
+    # "outside lower center" 让 constrained_layout 为图例预留空间，
+    # 否则它会盖住第 2 个 panel 的 x 轴刻度
+    fig.legend(handles=[base_line], loc="outside lower center", ncol=1,
+               fontsize=6.5)
     return fig

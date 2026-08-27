@@ -56,6 +56,7 @@ def apply_style():
         "grid.linewidth": 0.5,
         "legend.frameon": False,
         "figure.dpi": 200,
+        "savefig.dpi": 450,   # 三维网格光栅化后按这个分辨率写入 PDF
         "savefig.bbox": "tight",
         "savefig.pad_inches": 0.02,
         "pdf.fonttype": 42,      # 字体嵌入为 TrueType，PDF/A 需要
