@@ -15,8 +15,15 @@ scripts/check_fig_assets.py — 核对 export_nii.py 导出的掩膜能否复现
 import os
 import sys
 import argparse
+import numpy as np
 import nibabel as nib
 from scipy import ndimage
+
+
+def load_mask(path):
+    """按原始 dtype 读取。nibabel 的 get_fdata 一律转 float64，326^3 的体积
+    每个就是 277MB，四个加起来能把登录节点撑爆 —— 掩膜本来是 uint8。"""
+    return np.asanyarray(nib.load(path).dataobj) > 0
 
 
 def human(n):
@@ -39,7 +46,7 @@ def main():
             print(f"[跳过] 找不到 {gt_path}")
             continue
 
-        gt = nib.load(gt_path).get_fdata() > 0
+        gt = load_mask(gt_path)
         n_gt = ndimage.label(gt)[1]
         print(f"\n=== case {cid} ===")
         print(f"GT 连通域 = {n_gt}")
@@ -50,7 +57,7 @@ def main():
             if not os.path.exists(path):
                 print(f"{name:<12}{'—— 未导出':>24}")
                 continue
-            m = nib.load(path).get_fdata() > 0
+            m = load_mask(path)
             k = ndimage.label(m)[1]
             denom = m.sum() + gt.sum()
             dice = (2 * (m & gt).sum() / denom) if denom else float("nan")
