@@ -24,7 +24,7 @@
 | 配置 | Dice | clDice | Betti-0 err | HD95 |
 |------|------|--------|-------------|------|
 | 单轴，无后处理 | 0.7925 | 0.8457 | 23.69 | 27.77 |
-| 单轴 + 后处理 | 0.7955 | 0.8582 | 4.19 | 24.98 |
+| 单轴 + 后处理 | 0.7955 | 0.8581 | 4.19 | 24.98 |
 | 单轴 + TTA + 后处理 | 0.8027 | 0.8670 | 3.68 | 23.66 |
 | **三正交 mean(thr=0.5) + 后处理** | **0.8098** | **0.8762** | 2.46 | **20.53** |
 | **Stage-2 精修（单轴起点）+ pp** | 0.8117 | **0.8863** | **1.79** | 22.31 |
@@ -153,8 +153,8 @@ CUDA_VISIBLE_DEVICES="" python scripts/train/train.py \
 
 # 正式训练（GPU）
 python scripts/train/train.py --cache-dir /path/to/cache \
-    --backbone segresnet --k 2 --crop-size 384 --batch-size 8 \
-    --lr 3e-4 --epochs 100
+    --backbone segresnet --k 2 --crop-size 384 --batch-size 32 \
+    --lr 3e-4 --epochs 70
 
 # 提交 SLURM
 sbatch slurm/train/train_2p5d.sbatch

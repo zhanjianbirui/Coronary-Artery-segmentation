@@ -1,149 +1,232 @@
-# ImageCAS 冠状动脉分割（2.5D 三正交方向）
+# Coronary Artery Segmentation from CTA
 
-基于 MONAI 的 2.5D SegResNet 冠状动脉分割流水线。在 a SLURM 集群（SLURM + A100 80GB）上开发和训练。
+*[中文说明 / Chinese version](README.zh.md)*
 
-## 方法概述
+A two-stage pipeline for segmenting the coronary artery tree from cardiac CTA volumes,
+built on the [ImageCAS](https://arxiv.org/abs/2211.01607) dataset (1000 cases).
+Developed as an MSc project at the a university and trained on the SLURM
+cluster (SLURM, A100 80 GB).
 
-采用 **2.5D 三正交方向**策略：沿三个正交轴（矢状面/冠状面/轴位面）切片，取中心层前后各 k 层堆叠成 `2k+1` 通道输入 2D SegResNet，只预测中心层的血管掩码。推理时逐切片预测再拼回 3D 体积。
+The coronary lumen occupies **less than 1 %** of a CTA volume and forms a thin, branching
+tree. Dice barely moves when a distal branch is lost, but the clinical value of a
+segmentation rests on exactly that connectivity. This project therefore optimises and
+reports **topology alongside overlap**.
+
+---
+
+## Results
+
+All figures are means over the **full 200-case test set**, after post-processing.
+
+| Configuration | Dice | clDice | Betti-0 error | HD95 (mm) |
+|---|---|---|---|---|
+| Single-axis 2.5D | 0.7955 | 0.8581 | 4.19 | 24.98 |
+| Single-axis 2.5D + TTA | 0.8027 | 0.8670 | 3.68 | 23.66 |
+| Tri-axial fusion (Stage 1) | 0.8098 | 0.8762 | 2.46 | 20.53 |
+| **+ topology-aware refinement (final)** | **0.8216** | **0.8960** | **1.53** | **19.90** |
+
+Both stages improve **all four metrics**. Every comparison is paired per case and tested
+with a Wilcoxon signed-rank test with Holm–Bonferroni correction across the four metrics:
+
+- **Tri-axial fusion vs. single-axis + TTA** — significant on all four
+  (Dice *p* = 4.2 × 10⁻⁸, Betti-0 *p* = 1.5 × 10⁻¹²).
+- **Final vs. Stage 1** — significant on all four
+  (clDice *p* = 5.1 × 10⁻²³ with 165 of 200 cases improved; HD95 *p* = 0.037).
+
+The largest relative gain is on **Betti-0 error, which falls by 63 %** against the
+single-axis baseline (4.19 → 1.53) — that is, the output is much closer to the two
+connected trees the anatomy actually has.
+
+---
+
+## Method
+
+**Stage 1 — 2.5D tri-axial segmentation.** A single 2D network with shared weights
+processes slices along all three orthogonal axes. Each input stacks `2k+1 = 5` adjacent
+slices as channels and the network predicts the centre slice. At inference the three
+directional probability volumes are fused by a voxel-wise mean. This buys wide
+in-plane context under a memory budget that a full 3D network cannot match: a 3D model
+on 80 GB handles patches of about 128³ voxels, while a coronary tree spans over 200 mm.
+
+**Stage 2 — topology-aware residual refinement.** A 3D network takes the image and the
+Stage-1 probability and predicts a **residual correction** to the Stage-1 logit, with a
+zero-initialised head so training starts from the identity. Its loss adds
+**soft-clDice** — a differentiable centreline-overlap term — to a DiceFocal region term.
+The module is independent of the architecture it follows: it improves two different
+Stage-1 outputs.
 
 ```
-预处理: RAS定向 → 0.5mm各向同性重采样 → HU加窗[-200,800]归一化
-训练:   三方向切片(类别均衡采样) → 2D SegResNet → DiceCE loss → bfloat16 AMP
-推理:   逐切片2.5D预测 → 拼回3D → 小连通域去除(min_voxels=300) → [可选] TTA
-评估:   Dice / clDice / Betti-0 误差 / HD95
+Preprocessing   RAS orientation → 0.5 mm isotropic → HU window [-200, 800] → [0, 1]
+Stage 1         tri-axial 2.5D slices → 2D SegResNet → DiceCE → bfloat16 AMP
+Fusion          voxel-wise mean over three axes → threshold 0.50
+Stage 2         [image, p_stage1] → 3D SegResNet → residual → DiceFocal + 0.5·soft-clDice
+Post-process    remove connected components below 300 voxels
+Evaluation      Dice · clDice · Betti-0 error · HD95, per case, paired tests
 ```
 
-### 当前结果（200 例测试集）
+---
 
-| 配置                       | Dice   | clDice | Betti-0 err | HD95  |
-| -------------------------- | ------ | ------ | ----------- | ----- |
-| 优化后处理 (mv=300, gap=0) | 0.7955 | 0.8582 | 4.19        | 24.98 |
+## What did not work
 
-## 项目结构
+Negative results are kept in the repository, with the experiments that produced them.
+A negative result that cannot be re-run is not a result.
+
+- **Residual gating.** A learnable gate was meant to restrict correction to places where
+  Stage 1 had erred. Ablation shows it *harms* three metrics. Measuring inside the trained
+  model explains why: the gate saturates (mean 0.86, range 0.78–0.98) and the correction
+  it applies to regions that should be left alone is **2.6× larger** than the correction
+  applied where it was needed. It was removed from the final pipeline.
+- **Inter-direction disagreement.** Where the three directions disagree does mark errors,
+  but neither exploitation route survived. An explicit adaptive-threshold rule reverses in
+  sign between subsets; giving the disagreement to the network as extra input channels is
+  significantly *worse* on three metrics.
+- **Endpoint reconnection.** Joining broken endpoints creates more wrong connections than
+  correct ones — Betti-0 error grows monotonically with the allowed gap.
+- **A spatial prior** for removing distant false positives helps on a stratified subset but
+  its parameters do not transfer between subsets, so it is implemented but disabled.
+
+---
+
+## Repository layout
+
+`scripts/` and `slurm/` use the **same five groups**, so a result, the script that produced
+it, and the job that ran it sit at matching paths.
 
 ```
 coronary-seg/
-├── configs/default.yaml          # 超参数配置（YAML，prepare_data.py 使用）
-├── src/
-│   ├── config.py                 # YAML 配置加载（dataclass + dotted-key 覆盖）
-│   ├── utils.py                  # 种子 / 日志 / 统计
-│   ├── data.py                   # 三方向2.5D数据流水线 / 切片索引 / DataLoader
-│   ├── model.py                  # 模型工厂（SegResNet / UNet）+ 损失
-│   ├── engine.py                 # 训练/验证循环（bfloat16 AMP + 梯度安全检查）
-│   ├── checkpoint.py             # 断点续训（原子写）
-│   └── smart_reconnect.py        # 方向感知端点重连（实验证明关闭更优）
-├── scripts/
-│   ├── prepare_data.py           # 下载 ImageCAS + 生成划分
-│   ├── train.py                  # 训练入口（argparse CLI）
-│   ├── predict.py                # 推理 + 后处理 + 拓扑评估
-│   ├── scout_bbox.py             # 血管边界框侦察（确定裁剪尺寸）
-│   ├── sweep_postproc.py         # 后处理参数扫描
-│   ├── sweep_threshold.py        # 预测阈值扫描
-│   ├── check_data.py             # 数据核对
-│   ├── vis_slices.py             # 切片可视化
-│   ├── vis_predict.py            # 预测结果可视化
-│   └── analyze_cases.py          # 逐病例分析
-├── slurm/
-│   ├── train.sbatch              # 训练作业脚本
-│   ├── train_2p5d.sbatch         # 2.5D 训练作业脚本
-│   └── predict_tta.sbatch        # TTA 推理作业脚本
-├── requirements.txt
-└── README.md
+├── src/                       # reusable modules
+│   ├── data.py                #   tri-axial 2.5D pipeline, slice indexing, balanced sampling
+│   ├── model.py               #   Stage-1 network (2D SegResNet / UNet)
+│   ├── engine.py              #   train/val loop, bfloat16 AMP, non-finite gradient guard
+│   ├── ckpt_init.py           #   --resume vs --init-from (deliberately separate)
+│   ├── stage2_{data,model,loss}.py
+│   ├── spatial_prior.py       #   explored, not adopted
+│   └── smart_reconnect.py     #   evaluated and rejected, disabled by default
+├── scripts/                   # entry points, grouped by pipeline stage
+│   ├── data/  train/  predict/  analysis/  figs/
+├── slurm/                     # one submission script per experiment, same grouping
+│   ├── data/  train/  predict/  analysis/
+├── runs/                      # per-case metric CSVs, one directory per configuration
+├── splits/split.json          # frozen 700/100/200 split, seed 42
+├── tests/                     # run directly: python tests/xxx.py
+└── configs/default.yaml
 ```
 
-## 使用流程
+Model weights are not in the repository. **The per-case CSVs they produced are** — every
+comparison above is recomputed from those files by `scripts/analysis/compare_runs.py`.
 
-### 0. 环境配置（login 节点，一次性）
+---
+
+## Reproduction
+
+Steps 1–4 need a GPU. Step 5 reads CSVs only and runs on a login node.
 
 ```bash
-module load apps/binapps/anaconda3/2024.10
-source "$(conda info --base)/etc/profile.d/conda.sh"
+cd coronary-seg
+```
+
+**0. Environment**
+
+```bash
+module load apps/binapps/anaconda3/2024.10        # SLURM-specific
 conda activate ~/scratch/envs/coronary
 pip install -r requirements.txt
 pip install torch --index-url https://download.pytorch.org/whl/cu124
 ```
 
-### 1. 下载数据 + 生成划分（login 节点，需联网）
+**1. Data and splits** — downloads ImageCAS (~50 GB) via kagglehub and writes the frozen
+700/100/200 split. Put the data on scratch, not home.
 
 ```bash
-python scripts/prepare_data.py --config configs/default.yaml
+python scripts/data/prepare_data.py --config configs/default.yaml
 ```
 
-通过 kagglehub 下载 ImageCAS（~50GB），生成 `splits/split.json`（700/100/200 划分）。数据放 `~/scratch`，别放 home。
-
-### 2. 训练
+**2. Stage 1** — tri-axial sampling is the default; there is no flag to switch it off.
 
 ```bash
-# Sanity check：过拟合单个 batch（CPU 可跑）
-CUDA_VISIBLE_DEVICES="" python scripts/train.py \
-    --cache-dir /path/to/cache --overfit-one-batch \
-    --crop-size 128 --max-cases 5 --steps 150 --num-workers 0
+python scripts/train/train.py --split-json splits/split.json --cache-dir <cache> \
+    --k 2 --crop-size 384 --batch-size 32 --epochs 70 --lr 3e-4 \
+    --backbone segresnet --out-dir runs/exp_tri2p5d
 
-# 正式训练（GPU）
-python scripts/train.py --cache-dir /path/to/cache \
-    --backbone segresnet --k 2 --crop-size 384 --batch-size 8 \
-    --lr 3e-4 --epochs 100
-
-# 提交 SLURM
-sbatch slurm/train_2p5d.sbatch
+sbatch slurm/train/train_2p5d.sbatch          # the exact job used for the reported model
 ```
 
-### 3. 断点续训（被 4 天上限杀掉后）
+**3. Stage-1 inference** — runs the three directions, fuses, thresholds, filters, and
+writes per-case metrics.
 
 ```bash
-python scripts/train.py --cache-dir /path/to/cache --resume
-# 或
-sbatch slurm/train_2p5d.sbatch --resume
+PYTHONPATH=. python scripts/predict/predict_tri.py \
+    --cache-dir <cache> --ckpt runs/exp_tri2p5d/best.pth \
+    --out-csv runs/exp_tri2p5d/test_metrics.csv
 ```
 
-从 `last.pth` 精确恢复模型 + 优化器 + scheduler + epoch + best_dice。
-
-### 4. 推理 + 评估
+**4. Stage 2**
 
 ```bash
-PYTHONPATH=. python scripts/predict.py \
-    --cache-dir /path/to/cache \
-    --ckpt runs/exp_2p5d/best.pth \
-    --out-csv runs/exp_2p5d/test_metrics.csv \
-    --min-voxels 300 --max-gap 0 \
-    --tta --pad-multiple 32
+PYTHONPATH=. python scripts/data/stage2_prepare.py   ...   # cache Stage-1 probabilities
+PYTHONPATH=. python scripts/train/train_stage2.py    ...
+PYTHONPATH=. python scripts/predict/predict_stage2.py ...
 ```
 
-同时输出"带/不带后处理"两组指标（Dice / clDice / Betti-0 / HD95），支持断点续跑。
+`predict_stage2.py` writes the Stage-1 and Stage-2 metrics for a case into the **same CSV
+row**, so a comparison cannot silently be run across mismatched case sets.
 
-### 5. 参数扫描（可选）
+**5. Compare**
 
 ```bash
-# 后处理参数扫描：推理一次，缓存预测，零成本扫描 min_voxels × max_gap
-PYTHONPATH=. python scripts/sweep_postproc.py \
-    --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth
-
-# 阈值扫描：缓存概率图，扫描不同二值化阈值
-PYTHONPATH=. python scripts/sweep_threshold.py \
-    --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth
+PYTHONPATH=. python scripts/analysis/compare_runs.py \
+    --baseline "tri-axial=runs/exp_tri2p5d/test_metrics_tri_mean050_v2.csv:pp" \
+    --runs "final=runs/stage2_tri_nogate/test_metrics.csv:s2"
 ```
 
-## 调参速查
+This reproduces the paired Wilcoxon and Holm output quoted above.
 
-| 参数       | CLI flag       | 默认值    | 说明                        |
-| ---------- | -------------- | --------- | --------------------------- |
-| 骨干网络   | `--backbone`   | segresnet | segresnet / unet            |
-| 上下文厚度 | `--k`          | 2         | 取中心层±k层，输入通道=2k+1 |
-| 裁剪尺寸   | `--crop-size`  | 384       | 侦察脚本验证384零血管损失   |
-| batch 大小 | `--batch-size` | 8         | A100 80G 可用               |
-| 学习率     | `--lr`         | 3e-4      |                             |
-| 梯度裁剪   | `--grad-clip`  | 1.0       |                             |
-| 关闭 AMP   | `--no-amp`     | 开启      | CPU 测试时自动关            |
-| 去碎片阈值 | `--min-voxels` | 300       | sweep 确定的最优值          |
-| 端点重连   | `--max-gap`    | 0         | 实验证明关闭更优            |
-| TTA        | `--tta`        | 关        | 4-way翻转，推理慢4倍但更准  |
+---
 
-## 设计要点
+## Implementation notes
 
-- **类别极不平衡**：冠脉 <1% 体积。含血管切片全保留 + 背景按 0.25 比例采样 + DiceCE loss
-- **2.5D 三正交方向**：三个正交面切片混合训练，一个模型覆盖所有血管走向，显存友好可用大 FOV
-- **bfloat16 AMP**：float16 在稀疏前景场景下会梯度溢出致 nan，bf16 动态范围与 fp32 相同，A100 原生支持
-- **梯度安全**：loss 和梯度的双重 nan/inf 检查，非有限时跳过更新，参数永不被污染
-- **断点续训**：原子写 `last.pth`（tmp + rename），4 天 SLURM 上限被杀后 `--resume` 无缝继续
-- **推理断点续跑**：predict.py 读已有 CSV 跳过已完成病例
-- **数据驱动决策**：裁剪尺寸用侦察脚本确定、后处理参数用 sweep 扫描、每步优化先诊断再对症
+- **Class imbalance.** Slices containing vessel are all kept; background slices are sampled
+  at a ratio of 0.25, combined with a DiceCE loss. Simple oversampling of positive cases was
+  rejected — it revisits a small number of cases and raises the overfitting risk.
+- **bfloat16, not float16.** With foreground this sparse, fp16 overflows to NaN. bf16 has the
+  dynamic range of fp32 and is native on A100. Gradients are additionally checked for
+  finiteness before every step, and non-finite steps are skipped.
+- **Checkpoint resilience.** `last.pth` is written atomically (temp file + rename), so a job
+  killed at the 4-day SLURM limit resumes cleanly with `--resume`.
+- **`--resume` and `--init-from` are separate flags.** `--resume` restores model, optimiser,
+  scheduler, epoch and best metric; `--init-from` loads weights only and starts a fresh
+  schedule. Conflating them silently restarts the LR schedule mid-training. Covered by
+  `tests/test_init_from.py`.
+- **Inference is resumable.** The prediction scripts read an existing CSV and skip cases
+  already evaluated.
+
+## Evaluation protocol
+
+Four metrics, chosen to be complementary rather than redundant: **Dice** (volumetric
+overlap), **clDice** (centreline agreement), **Betti-0 error** (difference in the number of
+connected components), and **HD95** (worst-case boundary distance, 95th percentile).
+
+Comparisons are **per case and paired** on the full 200-case test set, tested with the
+Wilcoxon signed-rank test and corrected with Holm–Bonferroni across the four metrics.
+This matters: a difference in means is not evidence of an improvement, and on this data
+mean differences and paired tests disagree in both directions.
+
+## Limitations
+
+- A single dataset (ImageCAS). No cross-centre or cross-scanner validation.
+- Stage 2 operates on 128³ patches and therefore has no view of global anatomy.
+- HD95 has a heavy tail driven by false positives — confusion with the aorta, veins and
+  other tubular structures far from the coronary tree — rather than by missed vessel.
+
+## Data
+
+**ImageCAS** — 1000 cardiac CTA volumes with coronary artery annotations.
+Zeng et al., *Computerized Medical Imaging and Graphics*, 2023
+([arXiv:2211.01607](https://arxiv.org/abs/2211.01607)).
+
+The dataset is **not redistributed here**. `scripts/data/prepare_data.py` fetches it via
+`kagglehub` from `xiaoweixumedicalai/imagecas` (~50 GB); please follow the dataset's own
+licence terms. Put it on scratch storage, not in your home directory.
+
+Detailed documentation, including the full experiment history, is in
+[`coronary-seg/README.md`](coronary-seg/README.md) (Chinese).
