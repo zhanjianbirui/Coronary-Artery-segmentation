@@ -1,6 +1,6 @@
 """定性图的体积数据层。
 
-体积由 scripts/export_nii.py 在集群上导出，默认放在项目外的 vis_nii/。
+体积由 scripts/figs/export_nii.py 在集群上导出，默认放在项目外的 vis_nii/。
 全部是**预处理空间**（0.5mm 各向同性、已裁剪、HU 窗已加），四个体积几何一致。
 """
 
@@ -29,7 +29,7 @@ def load(case, name, vis_dir=DEFAULT_DIR):
     if not os.path.exists(p):
         raise MissingVolume(
             f"缺少 {p}\n"
-            f"→ 在集群上跑：./scripts/export_fig_assets.sh {case}\n"
+            f"→ 在集群上跑：./scripts/figs/export_fig_assets.sh {case}\n"
             f"  再 scp 回 {vis_dir}/")
     arr = np.asanyarray(nib.load(p).dataobj)
     return arr if name == "image" else arr > 0

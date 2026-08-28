@@ -8,11 +8,11 @@ Coronary artery segmentation from 3D CTA volumes (ImageCAS dataset: 1000 cases).
 
 ## Architecture
 
-The codebase has evolved from a 3D U-Net pipeline (configs/default.yaml still references 3D settings) to a **2.5D tri-axial** approach. The active training path uses `scripts/train.py` which accepts CLI args directly (not the YAML config system).
+The codebase has evolved from a 3D U-Net pipeline (configs/default.yaml still references 3D settings) to a **2.5D tri-axial** approach. The active training path uses `scripts/train/train.py` which accepts CLI args directly (not the YAML config system).
 
 **Two config systems coexist:**
 - `src/config.py`: YAML-based dataclass config with dotted-key overrides — used by `prepare_data.py` and referenced in `configs/default.yaml`
-- `scripts/train.py`, `scripts/predict.py`: Use argparse with flat CLI flags — this is the active training/inference path
+- `scripts/train/train.py`, `scripts/predict/predict.py`: Use argparse with flat CLI flags — this is the active training/inference path
 
 **Data pipeline (`src/data.py`):**
 - Tri-axial 2.5D: slices along all 3 orthogonal axes (axis 0/1/2), one model learns all orientations
@@ -28,7 +28,7 @@ The codebase has evolved from a 3D U-Net pipeline (configs/default.yaml still re
 - Uses bfloat16 AMP on A100 (no GradScaler needed); falls back to float16+GradScaler
 - Gradient-level nan/inf protection: skips optimizer step if gradients are non-finite
 
-**Post-processing (`scripts/predict.py` + `src/smart_reconnect.py`):**
+**Post-processing (`scripts/predict/predict.py` + `src/smart_reconnect.py`):**
 - Small component removal → optional direction-aware endpoint reconnection
 - Topology metrics: Dice, clDice (skeleton-based), Betti-0 error, HD95
 
@@ -42,33 +42,33 @@ pip install -r requirements.txt
 pip install torch --index-url https://download.pytorch.org/whl/cu124
 
 # Download data + generate splits
-python scripts/prepare_data.py --config configs/default.yaml
+python scripts/data/prepare_data.py --config configs/default.yaml
 
 # Sanity check: overfit one batch (CPU, small scale)
-CUDA_VISIBLE_DEVICES="" python scripts/train.py \
+CUDA_VISIBLE_DEVICES="" python scripts/train/train.py \
     --cache-dir /path/to/cache --overfit-one-batch \
     --crop-size 128 --max-cases 5 --steps 150 --num-workers 0
 
 # Full training (GPU)
-python scripts/train.py --cache-dir /path/to/cache \
+python scripts/train/train.py --cache-dir /path/to/cache \
     --epochs 100 --crop-size 512 --batch-size 8
 
 # Resume training
-python scripts/train.py --cache-dir /path/to/cache --resume
+python scripts/train/train.py --cache-dir /path/to/cache --resume
 
 # Submit to SLURM
-sbatch slurm/train.sbatch
+sbatch slurm/train/train.sbatch
 
 # Inference + evaluation
-PYTHONPATH=. python scripts/predict.py \
+PYTHONPATH=. python scripts/predict/predict.py \
     --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth \
     --out-csv runs/exp_2p5d/test_metrics.csv --pad-multiple 32
 
 # Sweep post-processing params
-PYTHONPATH=. python scripts/sweep_postproc.py --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth
+PYTHONPATH=. python scripts/analysis/sweep_postproc.py --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth
 
 # Sweep prediction threshold
-PYTHONPATH=. python scripts/sweep_threshold.py --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth
+PYTHONPATH=. python scripts/analysis/sweep_threshold.py --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth
 
 # Self-test individual modules
 python src/model.py --k 2 --backbone segresnet

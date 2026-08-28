@@ -40,7 +40,7 @@ def load(key, metric):
     if not os.path.exists(p):
         raise MissingCsv(
             f"缺少 {rel}\n"
-            f"→ 在本地仓库根目录跑：./scripts/fetch_paper_csv.sh")
+            f"→ 在本地仓库根目录跑：./scripts/data/fetch_paper_csv.sh")
     col = f"{prefix}_{metric}"
     out = {}
     with open(p) as fh:

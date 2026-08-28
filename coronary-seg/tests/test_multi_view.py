@@ -42,9 +42,9 @@ def fn_of(tree, name):
 def test_no_duplicate_args():
     """函数签名不能有重复参数 —— 本次改动真的踩过（views=None, views=views）。"""
     print("\n[1] 所有被改动文件的函数签名合法")
-    for rel in ("scripts/predict_stage2.py", "scripts/stage2_prepare.py",
+    for rel in ("scripts/predict/predict_stage2.py", "scripts/data/stage2_prepare.py",
                 "src/stage2_data.py", "src/stage2_model.py",
-                "scripts/train_stage2.py"):
+                "scripts/train/train_stage2.py"):
         tree = ast.parse(src(rel))
         bad = []
         for n in ast.walk(tree):
@@ -58,7 +58,7 @@ def test_no_duplicate_args():
 def test_load_npz_unpack_matches():
     """load_npz 的返回值个数必须与所有解包处一致。"""
     print("\n[2] load_npz 的返回值与解包处一致")
-    s = src("scripts/predict_stage2.py")
+    s = src("scripts/predict/predict_stage2.py")
     tree = ast.parse(s)
     ln = fn_of(tree, "load_npz")
     n_ret = max(len(r.value.elts) for r in ast.walk(ln)
@@ -78,7 +78,7 @@ def test_load_npz_unpack_matches():
 def test_views_threaded_through():
     """views 必须真的从 load_npz 传到 infer_case，而不只是加在签名上。"""
     print("\n[3] views 贯通 load_npz -> infer_case")
-    s = src("scripts/predict_stage2.py")
+    s = src("scripts/predict/predict_stage2.py")
     tree = ast.parse(s)
     inf = fn_of(tree, "infer_case")
     chk("infer_case 签名含 views", "views" in [a.arg for a in inf.args.args])
@@ -129,7 +129,7 @@ def test_data_multi_view():
 
 def test_prepare_saves_views():
     print("\n[6] 数据生成保存三方向概率")
-    s = src("scripts/stage2_prepare.py")
+    s = src("scripts/data/stage2_prepare.py")
     chk("有 --save-views 开关", '"--save-views"' in s)
     chk("用 predict_tri_probs 取三方向", "predict_tri_probs" in s)
     chk("同时存融合结果 prob（保证能复现 2 通道结果）",
@@ -140,7 +140,7 @@ def test_channel_order_consistent():
     """通道顺序在训练与推理两条路径上必须一致：image 在 0，概率在其后。"""
     print("\n[7] 训练与推理的通道顺序一致")
     d = src("src/stage2_data.py")
-    p = src("scripts/predict_stage2.py")
+    p = src("scripts/predict/predict_stage2.py")
     chk("训练侧 4 通道为 [image, *views]", "[img_p] + views" in d)
     chk("推理侧 4 通道为 [image, *views]",
         "[image[None], views]" in p)

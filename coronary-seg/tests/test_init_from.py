@@ -109,7 +109,8 @@ def test_scripts_wired():
     print("\n[4] train.py / train_stage2.py 的接线")
     want = {"validate_init_from", "load_init_weights", "add_init_from_arg"}
     for name in ("train.py", "train_stage2.py"):
-        src = io.open(os.path.join(REPO, "scripts", name), encoding="utf-8").read()
+        src = io.open(os.path.join(REPO, "scripts", "train", name),
+                      encoding="utf-8").read()
         tree = ast.parse(src)
         imported = {
             a.name

@@ -83,12 +83,12 @@
 
 ### 3.3 实现（predict\_tri.py）
 
-新增 `scripts/predict_tri.py`，两种运行模式：
+新增 `scripts/predict/predict_tri.py`，两种运行模式：
 
 **扫描模式**：对含难例（case 931/728/630）的 20 例子集，三轴各推一遍，交叉扫描 {mean, max} × {0.30, 0.35, 0.40, 0.45, 0.50} 共 10 种组合，输出对比表。
 
 ```bash
-PYTHONPATH=. python scripts/predict_tri.py \
+PYTHONPATH=. python scripts/predict/predict_tri.py \
     --cache-dir /path/to/cache \
     --ckpt runs/exp_tri/best.pth \
     --sweep --case-ids 931 728 630 --extra-cases 17 \
@@ -98,7 +98,7 @@ PYTHONPATH=. python scripts/predict_tri.py \
 **全量模式**：选定最优组合后，跑全部 200 例测试集，输出与单轴 baseline 口径一致的指标。
 
 ```bash
-PYTHONPATH=. python scripts/predict_tri.py \
+PYTHONPATH=. python scripts/predict/predict_tri.py \
     --cache-dir /path/to/cache \
     --ckpt runs/exp_tri/best.pth \
     --fixed-fuse max --thr 0.40 \

@@ -86,7 +86,7 @@ class ResidualGatedSegResNet(nn.Module):
         return_parts=False（默认）: 只返回 final_logit，与训练/推理路径完全一致。
         return_parts=True: 额外返回 {"gate", "delta"} 供分析使用 ——
             gate 是逐体素的修正强度 [0,1]，delta 是修正量。
-            用于检验门控是否如设计预期地"只在需要处激活"（见 scripts/analyse_gate.py）。
+            用于检验门控是否如设计预期地"只在需要处激活"（见 scripts/analysis/analyse_gate.py）。
             不含门控时 gate 为 None。
         """
         # 残差基准：单概率通道时直接取它；多通道时取平均（等价于 mean 融合），

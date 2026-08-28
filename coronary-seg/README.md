@@ -55,31 +55,33 @@
 
 ## 项目结构
 
-> 脚本按**用途**分组如下。目录里是平铺的，但实际入口只有这几类——
+> `scripts/` 与 `slurm/` 按**流水线阶段**分成同名的五组
+> （`data` / `train` / `predict` / `analysis` / `figs`），两边分组一致 ——
+> 一个结果、产出它的脚本、跑它的作业，路径是对齐的。
 > 日常只会用到「主流程」那几个，其余是分析与一次性工具。
 
 ### 主流程（按执行顺序）
 
 | 步骤 | 脚本 | SLURM |
 |------|------|-------|
-| 1. 下载数据 + 生成划分 | `scripts/prepare_data.py` | — |
-| 2. 训练 Stage-1（2.5D 三正交） | `scripts/train.py` | `slurm/train_2p5d.sbatch` |
-| 3. 推理 + 评估 Stage-1 | `scripts/predict_tri.py` | `slurm/predict_tri_mean050_v2.sbatch` |
-| 4. 生成 Stage-2 数据 | `scripts/stage2_prepare.py` | `slurm/stage2_prep_tri.sbatch` |
-| 5. 训练 Stage-2（精修） | `scripts/train_stage2.py` | `slurm/train_stage2_tri.sbatch` |
-| 6. 推理 + 评估 Stage-2 | `scripts/predict_stage2.py` | `slurm/predict_stage2_tri.sbatch` |
-| 7. 方案间显著性比较 | `scripts/compare_runs.py` | —（login 节点即可） |
+| 1. 下载数据 + 生成划分 | `scripts/data/prepare_data.py` | — |
+| 2. 训练 Stage-1（2.5D 三正交） | `scripts/train/train.py` | `slurm/train/train_2p5d.sbatch` |
+| 3. 推理 + 评估 Stage-1 | `scripts/predict/predict_tri.py` | `slurm/predict/predict_tri_mean050_v2.sbatch` |
+| 4. 生成 Stage-2 数据 | `scripts/data/stage2_prepare.py` | `slurm/data/stage2_prep_tri.sbatch` |
+| 5. 训练 Stage-2（精修） | `scripts/train/train_stage2.py` | `slurm/train/train_stage2_tri.sbatch` |
+| 6. 推理 + 评估 Stage-2 | `scripts/predict/predict_stage2.py` | `slurm/predict/predict_stage2_tri.sbatch` |
+| 7. 方案间显著性比较 | `scripts/analysis/compare_runs.py` | —（login 节点即可） |
 
 ### 分析与诊断
 
 | 脚本 | 回答什么问题 |
 |------|-------------|
-| `scripts/analyse_gate.py` | 残差门控是否按设计工作？（→ 发现它有害） |
-| `scripts/analyse_divergence.py` | 三方向分歧是否标记了错误？能否用于自适应阈值 |
-| `scripts/analyze_cases.py` | 逐病例诊断，找失败模式 |
-| `scripts/scout_bbox.py` | 统计冠脉外接框，用于确定裁剪尺寸 |
-| `scripts/check_data.py` | 数据完整性检查 |
-| `scripts/vis_predict.py` / `vis_slices.py` | 可视化 |
+| `scripts/analysis/analyse_gate.py` | 残差门控是否按设计工作？（→ 发现它有害） |
+| `scripts/analysis/analyse_divergence.py` | 三方向分歧是否标记了错误？能否用于自适应阈值 |
+| `scripts/analysis/analyze_cases.py` | 逐病例诊断，找失败模式 |
+| `scripts/data/scout_bbox.py` | 统计冠脉外接框，用于确定裁剪尺寸 |
+| `scripts/data/check_data.py` | 数据完整性检查 |
+| `scripts/figs/vis_predict.py` / `vis_slices.py` | 可视化 |
 
 ### 参数扫描
 
@@ -117,8 +119,8 @@ tests/                 # 不依赖 pytest，直接 python tests/xxx.py 运行
 python tests/test_init_from.py     # --resume / --init-from 的语义与 BUG-007 机制
 python tests/test_multi_view.py    # 多视角 stage-2 的跨文件接线一致性
 python src/spatial_prior.py        # 模块自测
-python scripts/analyse_gate.py --self-test
-python scripts/analyse_divergence.py --self-test
+python scripts/analysis/analyse_gate.py --self-test
+python scripts/analysis/analyse_divergence.py --self-test
 ```
 
 ## 使用流程
@@ -136,7 +138,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cu124
 ### 1. 下载数据 + 生成划分（login 节点，需联网）
 
 ```bash
-python scripts/prepare_data.py --config configs/default.yaml
+python scripts/data/prepare_data.py --config configs/default.yaml
 ```
 
 通过 kagglehub 下载 ImageCAS（~50GB），生成 `splits/split.json`（700/100/200 划分）。数据放 `~/scratch`，别放 home。
@@ -145,25 +147,25 @@ python scripts/prepare_data.py --config configs/default.yaml
 
 ```bash
 # Sanity check：过拟合单个 batch（CPU 可跑）
-CUDA_VISIBLE_DEVICES="" python scripts/train.py \
+CUDA_VISIBLE_DEVICES="" python scripts/train/train.py \
     --cache-dir /path/to/cache --overfit-one-batch \
     --crop-size 128 --max-cases 5 --steps 150 --num-workers 0
 
 # 正式训练（GPU）
-python scripts/train.py --cache-dir /path/to/cache \
+python scripts/train/train.py --cache-dir /path/to/cache \
     --backbone segresnet --k 2 --crop-size 384 --batch-size 8 \
     --lr 3e-4 --epochs 100
 
 # 提交 SLURM
-sbatch slurm/train_2p5d.sbatch
+sbatch slurm/train/train_2p5d.sbatch
 ```
 
 ### 3. 断点续训（被 4 天上限杀掉后）
 
 ```bash
-python scripts/train.py --cache-dir /path/to/cache --resume
+python scripts/train/train.py --cache-dir /path/to/cache --resume
 # 或
-sbatch slurm/train_2p5d.sbatch --resume
+sbatch slurm/train/train_2p5d.sbatch --resume
 ```
 
 从 `last.pth` 精确恢复模型 + 优化器 + scheduler + epoch + best_dice。
@@ -180,7 +182,7 @@ sbatch slurm/train_2p5d.sbatch --resume
 
 ```bash
 # 只借模型权重，optimizer / scheduler / epoch / best_dice 全部重建
-python scripts/train.py --cache-dir /path/to/cache \
+python scripts/train/train.py --cache-dir /path/to/cache \
     --init-from runs/exp_tri2p5d/best.pth \
     --out-dir runs/exp_tri2p5d_cont \
     --epochs 60 --lr 1e-4
@@ -203,7 +205,7 @@ python scripts/train.py --cache-dir /path/to/cache \
 ### 4. 推理 + 评估
 
 ```bash
-PYTHONPATH=. python scripts/predict.py \
+PYTHONPATH=. python scripts/predict/predict.py \
     --cache-dir /path/to/cache \
     --ckpt runs/exp_2p5d/best.pth \
     --out-csv runs/exp_2p5d/test_metrics.csv \
@@ -217,7 +219,7 @@ PYTHONPATH=. python scripts/predict.py \
 
 ```bash
 # 全量模式：固定融合方式与阈值，跑完 200 例测试集
-PYTHONPATH=. python scripts/predict_tri.py \
+PYTHONPATH=. python scripts/predict/predict_tri.py \
     --cache-dir /path/to/cache \
     --ckpt runs/exp_tri2p5d/best.pth \
     --fixed-fuse mean --thr 0.50 \
@@ -226,11 +228,11 @@ PYTHONPATH=. python scripts/predict_tri.py \
     --max-cases 0 --pad-multiple 32
 
 # sweep 模式：在子集上扫 融合方式 x 阈值
-PYTHONPATH=. python scripts/predict_tri.py \
+PYTHONPATH=. python scripts/predict/predict_tri.py \
     --cache-dir /path/to/cache --ckpt runs/exp_tri2p5d/best.pth --max-cases 8
 
 # 提交 SLURM
-sbatch slurm/predict_tri_mean050.sbatch
+sbatch slurm/predict/predict_tri_mean050.sbatch
 ```
 
 同一个模型分别沿 axis 0/1/2 逐切片预测，得到三张概率图后按 `mean` 融合再二值化。
@@ -240,11 +242,11 @@ sbatch slurm/predict_tri_mean050.sbatch
 
 ```bash
 # 后处理参数扫描：推理一次，缓存预测，零成本扫描 min_voxels × max_gap
-PYTHONPATH=. python scripts/sweep_postproc.py \
+PYTHONPATH=. python scripts/analysis/sweep_postproc.py \
     --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth
 
 # 阈值扫描：缓存概率图，扫描不同二值化阈值
-PYTHONPATH=. python scripts/sweep_threshold.py \
+PYTHONPATH=. python scripts/analysis/sweep_threshold.py \
     --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth
 ```
 
@@ -277,21 +279,21 @@ HD95<=20 的 101 例: precision 0.837 / recall 0.816
 
 ```bash
 # 先扫参数（推理一次，缓存后零成本扫 max_dist_mm × n_anchor）
-PYTHONPATH=. python scripts/sweep_spatial_prior.py \
+PYTHONPATH=. python scripts/analysis/sweep_spatial_prior.py \
     --cache-dir /path/to/cache --ckpt runs/exp_tri2p5d/best.pth \
     --tri --fuse mean --thr 0.50 --min-voxels 300 \
     --dist-list 10,15,20,30,40,60 --anchor-list 1,2,3 \
     --out-csv runs/exp_tri2p5d/sweep_spatial_prior.csv --max-cases 40
 
 # 建议先只跑诊断出的 5 个难例确认方向
-PYTHONPATH=. python scripts/sweep_spatial_prior.py ... \
+PYTHONPATH=. python scripts/analysis/sweep_spatial_prior.py ... \
     --case-ids 931 630 595 741 728
 
 # 扫出 D 之后，在正式推理里启用
-PYTHONPATH=. python scripts/predict_tri.py ... --sp-dist 20 --sp-anchor 2
+PYTHONPATH=. python scripts/predict/predict_tri.py ... --sp-dist 20 --sp-anchor 2
 
 # 提交 SLURM
-sbatch slurm/sweep_spatial_prior.sbatch
+sbatch slurm/analysis/sweep_spatial_prior.sbatch
 ```
 
 扫描脚本除均值外还输出 `hd95_median` / `hd95_p90` / `n_hd95_gt50` —— 长尾问题
@@ -373,7 +375,7 @@ HD95 也从不显著变成显著（p=8.1e-04），**四项全部显著优**。
 `compare_runs.py` 只读结果 csv，不需要 GPU/torch/monai，**login 节点直接跑**：
 
 ```bash
-PYTHONPATH=. python scripts/compare_runs.py \
+PYTHONPATH=. python scripts/analysis/compare_runs.py \
     --baseline "三正交v2=runs/exp_tri2p5d/test_metrics_tri_mean050_v2.csv:pp" \
     --runs "单轴=runs/exp_2p5d/test_metrics_optimal.csv:pp" \
            "单轴+TTA=runs/exp_2p5d/test_final_tta.csv:pp" \
@@ -428,17 +430,17 @@ Stage-2 (3D ResidualGatedSegResNet)
 
 ```bash
 # 1. 生成 stage-2 数据
-python scripts/stage2_prepare.py --splits train val test \
+python scripts/data/stage2_prepare.py --splits train val test \
     --cache-dir /path/to/cache --ckpt runs/exp_2p5d/best.pth \
     --out-dir /path/to/cache/stage2 --k 2 --pad-multiple 32
 
-# 2. 训练（或 sbatch slurm/train_stage2.sbatch）
-python scripts/train_stage2.py --data-dir /path/to/cache/stage2 \
+# 2. 训练（或 sbatch slurm/train/train_stage2.sbatch）
+python scripts/train/train_stage2.py --data-dir /path/to/cache/stage2 \
     --batch-size 4 --epochs 30 --lr 3e-4 \
     --w-cldice 0.5 --cldice-warmup 500 --out-dir runs/stage2
 
 # 3. 推理评估
-PYTHONPATH=. python scripts/predict_stage2.py \
+PYTHONPATH=. python scripts/predict/predict_stage2.py \
     --data-dir /path/to/cache/stage2 --ckpt runs/stage2/best.pth
 ```
 
@@ -504,14 +506,14 @@ image/label 完全不变。
 
 ```bash
 # ① 生成数据（三正交推理约为单轴 3 倍耗时，建议分两批）
-sbatch slurm/stage2_prep_tri.sbatch --splits val,test   # 300 例
-sbatch slurm/stage2_prep_tri.sbatch --splits train      # 700 例
+sbatch slurm/data/stage2_prep_tri.sbatch --splits val,test   # 300 例
+sbatch slurm/data/stage2_prep_tri.sbatch --splits train      # 700 例
 
 # ② 训练（30 epoch）—— 务必串依赖
-sbatch --dependency=afterok:<prep_jobid> slurm/train_stage2_tri.sbatch
+sbatch --dependency=afterok:<prep_jobid> slurm/train/train_stage2_tri.sbatch
 
 # ③ 评估
-sbatch --dependency=afterok:<train_jobid> slurm/predict_stage2_tri.sbatch
+sbatch --dependency=afterok:<train_jobid> slurm/predict/predict_stage2_tri.sbatch
 ```
 
 输出目录一律用 `stage2_tri` / `runs/stage2_tri`，不要覆盖单轴那套 ——
@@ -527,8 +529,8 @@ sbatch --dependency=afterok:<train_jobid> slurm/predict_stage2_tri.sbatch
 主结论既然是「拓扑指标显著改善」，就必须证明它来自设计本身：
 
 ```bash
-sbatch slurm/train_stage2_tri.sbatch --no-gate    --out-dir runs/stage2_tri_nogate    # 验证 DEC-008
-sbatch slurm/train_stage2_tri.sbatch --w-cldice 0 --out-dir runs/stage2_tri_nocldice  # 验证 DEC-009
+sbatch slurm/train/train_stage2_tri.sbatch --no-gate    --out-dir runs/stage2_tri_nogate    # 验证 DEC-008
+sbatch slurm/train/train_stage2_tri.sbatch --w-cldice 0 --out-dir runs/stage2_tri_nocldice  # 验证 DEC-009
 ```
 
 两个判读要点：
