@@ -442,5 +442,11 @@ Zeng et al., *Computerized Medical Imaging and Graphics*, 2023
 The dataset is **not redistributed here**; obtain it from Kaggle
 (`xiaoweixumedicalai/imagecas`) and follow its own licence terms.
 
+## Licence
+
+The code in this repository is released under the [MIT License](LICENSE).
+This covers the code only — the ImageCAS dataset carries its own licence terms,
+which are unaffected by this one.
+
 The development log, including the full experiment history and the reasoning behind each
 decision, is in [`coronary-seg/README.md`](coronary-seg/README.md) (Chinese).

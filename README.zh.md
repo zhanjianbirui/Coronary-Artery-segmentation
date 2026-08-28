@@ -405,5 +405,10 @@ Zeng 等，*Computerized Medical Imaging and Graphics*，2023
 本仓库**不转发数据集**，请自行从 Kaggle（`xiaoweixumedicalai/imagecas`）获取，
 并遵守数据集自身的许可条款。
 
+## 许可
+
+本仓库的**代码**以 [MIT License](LICENSE) 发布。
+该许可只覆盖代码 —— ImageCAS 数据集有它自己的许可条款，不受此影响。
+
 更详细的开发记录（含完整实验历史与每个决策的来龙去脉）见
 [`coronary-seg/README.md`](coronary-seg/README.md)。
