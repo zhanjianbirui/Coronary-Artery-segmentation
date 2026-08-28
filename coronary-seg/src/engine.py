@@ -5,7 +5,7 @@ src/engine.py — 训练 / 验证循环核心（数值稳定强化版）
 针对"训练中途突然全 nan"做的稳定性强化：
   1. AMP 用 bfloat16 而非 float16
      —— bf16 数值范围与 fp32 相同，几乎不会溢出成 inf/nan（根治）。
-     A100 原生支持。bf16 下不需要 GradScaler。
+     新一代数据中心 GPU 原生支持。bf16 下不需要 GradScaler。
   2. 梯度级 nan/inf 检查
      —— 不只查 loss，还在 optimizer.step() 前查梯度是否有限；
      梯度只要出现 nan/inf 就跳过这一步，绝不让参数被污染。

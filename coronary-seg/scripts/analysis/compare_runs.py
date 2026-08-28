@@ -7,7 +7,7 @@ scripts/analysis/compare_runs.py — 多方案逐病例配对显著性比较
 下降**（p=0.015），而看起来更大的 HD95 改善反而**不显著**（p=0.064，
 均值被重尾拉动）。论文里每个 Δ 都该配 p 值。
 
-本脚本只读结果 csv，不需要 GPU / torch / monai —— **login 节点直接跑**。
+本脚本只读结果 csv，不需要 GPU / torch / monai —— **在任何机器上都能直接跑**。
 
 支持两种 csv 列名格式，用 `路径:前缀` 指定：
   - predict.py / predict_tri.py:  raw_dice / pp_dice / ...   → 前缀 raw 或 pp

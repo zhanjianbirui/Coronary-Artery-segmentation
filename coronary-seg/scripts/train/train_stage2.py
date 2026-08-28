@@ -12,7 +12,7 @@ resume/init-from + overfit-one-batch），只替换三处：
 再去掉该 flag 上全量。
 
 ⚠ --resume 与 --init-from 是两个**不同场景**，不能混用（见 src/ckpt_init.py）：
-  --resume    训练被中途杀掉后接着跑（last_epoch < T_max，scheduler 继续退火）
+  --resume    训练被中途打断后接着跑（last_epoch < T_max，scheduler 继续退火）
   --init-from 已跑满 --epochs 后想再训一段（只借权重，其余全部重建）
 对跑满的 checkpoint 用 --resume 会让 LR 冲到初始值的约 98 倍并摧毁权重。
 本脚本默认 --epochs 80、三正交实验用 30，**跑满是预期结果**，容易踩到。
@@ -77,7 +77,7 @@ def parse_args():
     # resume / init-from —— 两个不同场景，见 src/ckpt_init.py
     p.add_argument("--resume", action="store_true",
                    help="从 out-dir/last.pth 恢复完整训练状态"
-                        "（用于被 SLURM 上限杀掉后接着跑）")
+                        "（用于训练被中途打断后接着跑）")
     p.add_argument("--multi-view", action="store_true",
                    help="用三个方向各自的概率作输入（4 通道 [image,p0,p1,p2]）"
                         "而非融合后的 prob（2 通道）。需要数据由 "

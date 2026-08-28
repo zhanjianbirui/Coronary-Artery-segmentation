@@ -1,6 +1,6 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM — stage-2 多视角（EXP-019）全量测试集评估
+# SLURM — stage-2 多视角（EXP-019）全量测试集评估
 #
 # 与 predict_stage2_tri.sbatch 的三点差别，正是那个脚本对 mv 不适用的原因：
 #   1. DATA_ROOT 指向 stage2_mv/test（tri 版写死 stage2_tri/test，
@@ -21,23 +21,23 @@
 
 #SBATCH --job-name=pred_s2_mv
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=12:00:00
 #SBATCH --output=runs/stage2_mv/pred_%j.out
 #SBATCH --error=runs/stage2_mv/pred_%j.err
 
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
+PROJECT_DIR=/path/to/coronary-seg
 DATA_ROOT=/path/to/cache/stage2_mv/test
 CKPT=runs/stage2_mv/best.pth
 

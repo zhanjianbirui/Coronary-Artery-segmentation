@@ -1,6 +1,6 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM — stage-2 精修网络训练（【三正交】起点）
+# SLURM — stage-2 精修网络训练（【三正交】起点）
 #
 # 与 train_stage2.sbatch 的区别：
 #   1. --data-dir 指向 stage2_tri（三正交概率），不是 stage2（单轴）
@@ -20,23 +20,23 @@
 # ============================================================
 #SBATCH --job-name=s2_tri
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=4-00:00:00
 #SBATCH --output=runs/stage2_tri/slurm_%j.out
 #SBATCH --error=runs/stage2_tri/slurm_%j.err
 
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
+PROJECT_DIR=/path/to/coronary-seg
 DATA_DIR=/path/to/cache/stage2_tri
 
 cd "$PROJECT_DIR" || exit 1

@@ -1,27 +1,27 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM - stage-2 3D 残差门控精修训练
+# SLURM - stage-2 3D 残差门控精修训练
 # 提交: sbatch slurm/train/train_stage2.sbatch
 # 续训: sbatch slurm/train/train_stage2.sbatch --resume
 # ============================================================
 #SBATCH --job-name=coronary_s2
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --time=4-00:00:00
 #SBATCH --output=runs/stage2/slurm_%j.out
 
 # ---- 环境 ----
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # ---- 路径 ----
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
-DATA_DIR=~/scratch/cache/stage2        # stage2 的 train/ val/ npz
+PROJECT_DIR=/path/to/coronary-seg
+DATA_DIR=/path/to/cache/stage2        # stage2 的 train/ val/ npz
 
 cd "$PROJECT_DIR"
 export PYTHONPATH=.

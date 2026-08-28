@@ -7,7 +7,7 @@ Step 1: 数据核对 + 划分核对/生成
   2. 抽查一个样本，打印 shape / spacing / affine（确认能正常读）
   3. 复用旧的 split.json（若存在则校验），否则用 seed=42 重新生成
 
-用法（在集群 coronary 环境下）：
+用法：
   python scripts/data/check_data.py \
       --data-root /path/to/ImageCAS \
       --split-json splits/split.json

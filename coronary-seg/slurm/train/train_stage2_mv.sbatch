@@ -1,6 +1,6 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM — 多视角 stage-2 训练（4 通道 [image, p0, p1, p2]）
+# SLURM — 多视角 stage-2 训练（4 通道 [image, p0, p1, p2]）
 #
 # 唯一变量：输入是三个方向的概率，而非融合后的单一概率。
 # 残差基准仍取三者平均，与 2 通道方案起点完全相同 —— 因此
@@ -17,23 +17,23 @@
 # ============================================================
 #SBATCH --job-name=s2_mv
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=1-00:00:00
 #SBATCH --output=runs/stage2_mv/slurm_%j.out
 #SBATCH --error=runs/stage2_mv/slurm_%j.err
 
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
+PROJECT_DIR=/path/to/coronary-seg
 DATA_DIR=/path/to/cache/stage2_mv
 cd "$PROJECT_DIR" || exit 1
 export PYTHONPATH=.

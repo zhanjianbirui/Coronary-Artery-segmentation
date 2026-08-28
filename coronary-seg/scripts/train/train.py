@@ -9,7 +9,7 @@ scripts/train/train.py — 训练入口
   2. 默认（不加该 flag）: 正式训练循环（AdamW + CosineAnnealing +
      每轮验证 + 保存 best/last checkpoint）。
 
-先在 login 节点用 CPU + 小尺寸跑过拟合：
+先用 CPU + 小尺寸跑过拟合：
   CUDA_VISIBLE_DEVICES="" python scripts/train/train.py \
       --cache-dir /path/to/cache/preproc \
       --overfit-one-batch --crop-size 128 --max-cases 5 \
@@ -70,7 +70,7 @@ def parse_args():
                    help="过拟合模式的迭代步数")
     # 断点续训
     p.add_argument("--resume", action="store_true",
-                   help="从 out-dir/last.pth 恢复训练（用于被 SLURM 上限杀掉后接着跑）")
+                   help="从 out-dir/last.pth 恢复训练（用于训练被中途打断后接着跑）")
     add_init_from_arg(p)
     return p.parse_args()
 
@@ -185,7 +185,7 @@ def full_train(model, train_loader, val_loader, loss_fn, device,
             "val_dice": val_dice,
             "best_dice": best_dice,
         }
-        # 原子写 last.pth（先写临时文件再改名，避免被杀时写坏）
+        # 原子写 last.pth（先写临时文件再改名，避免被中断时写坏）
         tmp = os.path.join(cfg["out_dir"], "last.pth.tmp")
         torch.save(ckpt, tmp)
         os.replace(tmp, os.path.join(cfg["out_dir"], "last.pth"))

@@ -111,7 +111,7 @@ def corr(a, b):
 def pick_device(pref="auto"):
     """选设备。
 
-    login 节点上 torch.cuda.is_available() 可能返回 True，但真正把张量搬上去
+    无 GPU 的节点上 torch.cuda.is_available() 可能返回 True，但真正把张量搬上去
     会抛 "CUDA-capable device(s) is/are busy or unavailable"。所以 auto 模式
     实际做一次搬运测试，失败就回退 CPU，而不是信任那个标志位。
     """
@@ -187,7 +187,7 @@ def main():
     ap.add_argument("--thr", type=float, default=0.5)
     ap.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"),
                     help="auto 会实际试一次 CUDA 初始化，失败则回退 CPU —— "
-                         "login 节点上 torch.cuda.is_available() 可能返回 True "
+                         "无 GPU 的节点上 torch.cuda.is_available() 可能返回 True "
                          "但设备其实不可用")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()

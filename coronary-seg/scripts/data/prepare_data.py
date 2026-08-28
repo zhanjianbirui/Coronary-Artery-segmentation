@@ -1,5 +1,10 @@
 #!/usr/bin/env python
-"""下载 ImageCAS + 生成数据划分. 在 login 节点运行 (需要联网).
+"""⚠️ 本脚本已失效: 它从 src.data 导入的 discover_cases / make_split / save_split
+三个函数在当前代码里并不存在, 直接运行会 ImportError.
+请改用入库的 splits/split.json 并把其中的绝对路径指向你自己那份 ImageCAS,
+做法见仓库首页 README 的第 1 步; 完整性核对用 scripts/data/check_data.py.
+
+下载 ImageCAS + 生成数据划分 (需要联网).
 
 用法:
     python scripts/data/prepare_data.py --config configs/default.yaml

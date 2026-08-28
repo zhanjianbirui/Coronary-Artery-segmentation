@@ -10,7 +10,7 @@ import nibabel as nib
 from scipy import ndimage
 from skimage.morphology import skeletonize
 
-DEFAULT_DIR = os.path.expanduser("~/Downloads/Project/vis_nii")
+DEFAULT_DIR = os.path.expanduser("vis_nii")
 
 COLUMNS = [
     ("gt",         "ground truth"),

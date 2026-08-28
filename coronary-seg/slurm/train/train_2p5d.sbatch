@@ -1,29 +1,29 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM 训练作业 - ImageCAS 冠脉分割 (2.5D)
+# SLURM 训练作业 - ImageCAS 冠脉分割 (2.5D)
 # 提交:     sbatch slurm/train/train_2p5d.sbatch
 # 续训:     sbatch slurm/train/train_2p5d.sbatch --resume
-#          (被4天上限杀掉后，从 last.pth 继续)
+#          (作业超时被中断后，从 last.pth 继续)
 # ============================================================
 #SBATCH --job-name=coronary25d
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --time=4-00:00:00
 #SBATCH --output=runs/slurm_%j.out
 
 # ---- 环境 ----
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 # 防止线程超订
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # ---- 路径 (按实际情况改) ----
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
-CACHE_DIR=~/scratch/cache/preproc      # 预处理磁盘缓存 (放 scratch)
+PROJECT_DIR=/path/to/coronary-seg
+CACHE_DIR=/path/to/cache/preproc      # 预处理磁盘缓存 (放大容量磁盘)
 
 cd "$PROJECT_DIR"
 

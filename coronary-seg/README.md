@@ -1,6 +1,12 @@
-# ImageCAS 冠状动脉分割（2.5D 三正交方向）
+# ImageCAS 冠状动脉分割 —— 开发记录
 
-基于 MONAI 的 2.5D SegResNet 冠状动脉分割流水线。在 a SLURM 集群（SLURM + A100 80GB）上开发和训练。
+> **这是开发过程记录，不是仓库简介。** 最终结论、结果表与 7 步复现流水线见
+> 仓库首页的 [`README.md`](../README.md) / [`README.zh.md`](../README.zh.md)。
+> 本文件按时间顺序记录了每一步的动机、扫描结果、踩过的坑与被否决的方案；
+> 其中部分章节写于结论定型之前，**引用任何数字请以首页 README 为准**。
+
+基于 MONAI 的 2.5D SegResNet 冠状动脉分割流水线。训练面向单张 CUDA GPU；
+`slurm/` 下是可选的批处理作业模板（`--account` / `--partition` / `--gres` 需按站点填写）。
 
 ## 方法概述
 
@@ -70,7 +76,7 @@
 | 4. 生成 Stage-2 数据 | `scripts/data/stage2_prepare.py` | `slurm/data/stage2_prep_tri.sbatch` |
 | 5. 训练 Stage-2（精修） | `scripts/train/train_stage2.py` | `slurm/train/train_stage2_tri.sbatch` |
 | 6. 推理 + 评估 Stage-2 | `scripts/predict/predict_stage2.py` | `slurm/predict/predict_stage2_tri.sbatch` |
-| 7. 方案间显著性比较 | `scripts/analysis/compare_runs.py` | —（login 节点即可） |
+| 7. 方案间显著性比较 | `scripts/analysis/compare_runs.py` | —（无需 GPU） |
 
 ### 分析与诊断
 
@@ -125,23 +131,28 @@ python scripts/analysis/analyse_divergence.py --self-test
 
 ## 使用流程
 
-### 0. 环境配置（login 节点，一次性）
+### 0. 环境配置（一次性）
 
 ```bash
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 pip install -r requirements.txt
 pip install torch --index-url https://download.pytorch.org/whl/cu124
 ```
 
-### 1. 下载数据 + 生成划分（login 节点，需联网）
+### 1. 数据与划分
+
+⚠️ **`scripts/data/prepare_data.py` 已失效** —— 它从 `src.data` 导入的
+`discover_cases` / `make_split` / `save_split` 三个函数在当前代码里并不存在。
+请改用入库的 `splits/split.json`（700/100/200，seed 42）并把其中的绝对路径
+指向你自己那份 ImageCAS，具体做法见[首页 README 的第 1 步](../README.zh.md#1--数据与划分)。
 
 ```bash
-python scripts/data/prepare_data.py --config configs/default.yaml
+python scripts/data/check_data.py --data-root /path/to/ImageCAS   # 只做完整性核对
 ```
 
-通过 kagglehub 下载 ImageCAS（~50GB），生成 `splits/split.json`（700/100/200 划分）。数据放 `~/scratch`，别放 home。
+ImageCAS 约 50GB，缓存目录另需数百 GB，建议放在大容量磁盘上。
 
 ### 2. 训练
 
@@ -160,7 +171,7 @@ python scripts/train/train.py --cache-dir /path/to/cache \
 sbatch slurm/train/train_2p5d.sbatch
 ```
 
-### 3. 断点续训（被 4 天上限杀掉后）
+### 3. 断点续训（训练被中途打断后）
 
 ```bash
 python scripts/train/train.py --cache-dir /path/to/cache --resume
@@ -170,7 +181,7 @@ sbatch slurm/train/train_2p5d.sbatch --resume
 
 从 `last.pth` 精确恢复模型 + 优化器 + scheduler + epoch + best_dice。
 
-**⚠ 这只适用于「训练被中途杀掉」。** 如果训练已经跑满 `--epochs`
+**⚠ 这只适用于「训练被中途打断」。** 如果训练已经跑满 `--epochs`
 （`last.pth` 的 epoch == epochs−1），`--resume` 不但没用，还会**毁掉权重**：
 `CosineAnnealingLR` 的 LR 此时已退火到 0，而 scheduler 的 `state_dict()`
 把 `T_max` 也存了进去，恢复时会把命令行新传的 `--epochs` 静默覆盖回旧值，
@@ -372,7 +383,7 @@ HD95 也从不显著变成显著（p=8.1e-04），**四项全部显著优**。
 统计方法只保证"给定这两组数字，差异是否真实"；它不会告诉你**其中一组
 本来可以更好**。对照组的质量是前置问题，见文末「方法论」一节。
 
-`compare_runs.py` 只读结果 csv，不需要 GPU/torch/monai，**login 节点直接跑**：
+`compare_runs.py` 只读结果 csv，不需要 GPU/torch/monai，**在任何机器上都能直接跑**：
 
 ```bash
 PYTHONPATH=. python scripts/analysis/compare_runs.py \
@@ -397,7 +408,7 @@ PYTHONPATH=. python scripts/analysis/compare_runs.py \
 | 骨干网络 | `--backbone` | segresnet | segresnet / unet |
 | 上下文厚度 | `--k` | 2 | 取中心层±k层，输入通道=2k+1 |
 | 裁剪尺寸 | `--crop-size` | 384 | 侦察脚本验证384零血管损失 |
-| batch 大小 | `--batch-size` | 8 | A100 80G 可用 |
+| batch 大小 | `--batch-size` | 8 | 所报模型用 32（80GB 显存）；默认值 8 未用于正式训练 |
 | 学习率 | `--lr` | 3e-4 | |
 | 梯度裁剪 | `--grad-clip` | 1.0 | |
 | 关闭 AMP | `--no-amp` | 开启 | CPU 测试时自动关 |
@@ -547,11 +558,11 @@ sbatch slurm/train/train_stage2_tri.sbatch --w-cldice 0 --out-dir runs/stage2_tr
 
 - **类别极不平衡**：冠脉 <1% 体积。含血管切片全保留 + 背景按 0.25 比例采样 + DiceCE loss
 - **2.5D 三正交方向**：三个正交面切片混合训练，一个模型覆盖所有血管走向，显存友好可用大 FOV
-- **bfloat16 AMP**：float16 在稀疏前景场景下会梯度溢出致 nan，bf16 动态范围与 fp32 相同，A100 原生支持
+- **bfloat16 AMP**：float16 在稀疏前景场景下会梯度溢出致 nan，bf16 动态范围与 fp32 相同，新一代数据中心 GPU 原生支持
 - **梯度安全**：loss 和梯度的双重 nan/inf 检查，非有限时跳过更新，参数永不被污染
-- **断点续训**：原子写 `last.pth`（tmp + rename），4 天 SLURM 上限被杀后 `--resume` 无缝继续
+- **断点续训**：原子写 `last.pth`（tmp + rename），训练被中途打断后 `--resume` 无缝继续
 - **`--resume` 与 `--init-from` 是两个不同场景，不能混用**：
-  `--resume` 恢复完整训练状态，用于**被杀后接着跑**（此时 `last_epoch < T_max`，正确）；
+  `--resume` 恢复完整训练状态，用于**被打断后接着跑**（此时 `last_epoch < T_max`，正确）；
   `--init-from` 只借模型权重、其余全部重建，用于**已跑满 `--epochs` 后再训一段**。
   对跑满的 checkpoint 用 `--resume` 会让 LR 冲到初始值的约 98 倍并摧毁权重 ——
   因为 PyTorch 的 scheduler `state_dict()` 连 `T_max` 一起存，

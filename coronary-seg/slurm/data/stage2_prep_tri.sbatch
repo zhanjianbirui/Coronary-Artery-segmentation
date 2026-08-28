@@ -1,6 +1,6 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM — 用【三正交】阶段1模型生成 stage-2 数据
+# SLURM — 用【三正交】阶段1模型生成 stage-2 数据
 #
 # 动机（EXP-012，数字按 EXP-014 修正）：stage-2 从**单轴**起点（Dice 0.7955）
 # 精修到 0.8117，在**拓扑指标**上超过了三正交融合本身
@@ -21,32 +21,32 @@
 #   sbatch slurm/data/stage2_prep_tri.sbatch --splits val,test    # 300 例
 #   sbatch slurm/data/stage2_prep_tri.sbatch --splits train       # 700 例
 #
-# 三正交推理约为单轴的 3 倍耗时，train 那批很可能一次跑不完 4 天上限。
+# 三正交推理约为单轴的 3 倍耗时，train 那批很可能一次跑不完作业时限。
 # 脚本本身可续跑（且已改原子写，不会留下半个损坏文件），
-# 被杀后原样再 sbatch 一次即可从断点继续。
+# 被中断后原样再 sbatch 一次即可从断点继续。
 #
-# 磁盘：每例 npz 约 40~80MB，1000 例合计约 40~80GB。提交前先看配额：
-#   df -h /path/to/scratch ; du -sh /path/to/cache/*
+# 磁盘：每例 npz 约 40~80MB，1000 例合计约 40~80GB。提交前先看剩余空间：
+#   df -h /path/to/cache
 # ============================================================
 #SBATCH --job-name=s2_prep_tri
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=4-00:00:00
 #SBATCH --output=runs/stage2/prep_tri_%j.out
 #SBATCH --error=runs/stage2/prep_tri_%j.err
 
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
+PROJECT_DIR=/path/to/coronary-seg
 CACHE_DIR=/path/to/cache/preproc
 OUT_DIR=/path/to/cache/stage2_tri     # 新目录，别用 stage2/
 

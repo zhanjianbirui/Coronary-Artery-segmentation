@@ -1,6 +1,6 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM — 三正交融合全量推理（用当前 best.pth 重跑）
+# SLURM — 三正交融合全量推理（用当前 best.pth 重跑）
 #
 # 为什么要重跑：旧的全量结果
 #   runs/exp_tri2p5d/test_metrics_tri_mean050.csv
@@ -26,23 +26,23 @@
 # ============================================================
 #SBATCH --job-name=pred_tri_v2
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=4-00:00:00
 #SBATCH --output=runs/slurm_pred_tri_v2_%j.out
 #SBATCH --error=runs/slurm_pred_tri_v2_%j.err
 
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
+PROJECT_DIR=/path/to/coronary-seg
 CACHE_DIR=/path/to/cache/preproc
 OUT_CSV=runs/exp_tri2p5d/test_metrics_tri_mean050_v2.csv
 

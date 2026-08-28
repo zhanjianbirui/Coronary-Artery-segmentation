@@ -1,25 +1,25 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM 推理作业 - 2.5D 全量测试集 + TTA
+# SLURM 推理作业 - 2.5D 全量测试集 + TTA
 # 提交: sbatch slurm/predict/predict_tta.sbatch
 # ============================================================
 #SBATCH --job-name=coro_predict
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --time=3:00:00
 #SBATCH --output=runs/predict_%j.out
 
 # ---- 环境 ----
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # ---- 路径 ----
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
-CACHE_DIR=~/scratch/cache/preproc
+PROJECT_DIR=/path/to/coronary-seg
+CACHE_DIR=/path/to/cache/preproc
 
 cd "$PROJECT_DIR"
 export PYTHONPATH=.

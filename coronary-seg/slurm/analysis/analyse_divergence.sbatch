@@ -1,6 +1,6 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM — 三方向分歧评估
+# SLURM — 三方向分歧评估
 #
 # 回答两个问题：
 #   A. mean 融合丢弃的方向间分歧(std)，是否标记了 stage-1 的出错位置？
@@ -28,23 +28,23 @@
 # ============================================================
 #SBATCH --job-name=diverg
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=3:00:00
 #SBATCH --output=runs/exp_tri2p5d/diverg_%j.out
 #SBATCH --error=runs/exp_tri2p5d/diverg_%j.err
 
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
+PROJECT_DIR=/path/to/coronary-seg
 cd "$PROJECT_DIR" || exit 1
 export PYTHONPATH=.
 

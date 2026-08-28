@@ -4,7 +4,7 @@
 混用会造成破坏（BUG-007）。两个训练脚本各写一份容易走样，所以抽出来。
 
   --resume     恢复完整训练状态（model + optimizer + scheduler + epoch）。
-               用于**训练被中途杀掉**（SLURM 4 天上限），此时 last_epoch < T_max，
+               用于**训练被中途打断**（例如作业超出时限），此时 last_epoch < T_max，
                scheduler 接着退火，行为完全正确。
 
   --init-from  只借模型权重，optimizer / scheduler / epoch / best_dice 全部重建。
@@ -42,7 +42,7 @@ def validate_init_from(init_from, out_dir, resume):
     if resume:
         raise ValueError(
             "--init-from 与 --resume 不能同用：前者只借权重、其余重建，"
-            "后者恢复完整训练状态。想接着跑被杀掉的训练用 --resume；"
+            "后者恢复完整训练状态。想接着跑被打断的训练用 --resume；"
             "想在已跑满的权重上再训一段用 --init-from。")
     if not os.path.isfile(init_from):
         raise ValueError(f"--init-from 指向的文件不存在: {init_from}")

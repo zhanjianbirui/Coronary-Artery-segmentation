@@ -79,7 +79,7 @@ def predict_prob(model, image3d, k, device, batch=16, pad_multiple=32):
 def save_npz_atomic(out_path, **arrays):
     """原子写 npz：先写 .tmp 再 rename。
 
-    BUG-004 的教训：作业被杀/超时会留下写了一半的 npz，
+    BUG-004 的教训：作业被中断/超时会留下写了一半的 npz，
     而 npz 是 zip 容器，截断后解压必然报
     `zlib.error: Error -3 while decompressing data`，
     并且续跑逻辑只看"文件是否存在"，会把这个坏文件当成已完成永远跳过。
@@ -167,7 +167,7 @@ def main():
                                   cache_dir=args.cache_dir)
         sub_dir = os.path.join(args.out_dir, split_name)
         os.makedirs(sub_dir, exist_ok=True)
-        # 上次作业被杀可能留下 .tmp，清掉免得占磁盘
+        # 上次作业被中断可能留下 .tmp，清掉免得占磁盘
         stale = [f for f in os.listdir(sub_dir) if f.endswith(".tmp.npz")]
         for f in stale:
             os.remove(os.path.join(sub_dir, f))

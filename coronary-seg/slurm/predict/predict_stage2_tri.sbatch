@@ -1,6 +1,6 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM — stage-2（三正交起点）全量测试集评估
+# SLURM — stage-2（三正交起点）全量测试集评估
 #
 # 这一步才能回答「换三正交起点到底值不值」。对比对象有两个：
 #   1. 同为 stage-2、但起点是单轴的 EXP-012：
@@ -36,23 +36,23 @@
 
 #SBATCH --job-name=pred_s2_tri
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=12:00:00
 #SBATCH --output=runs/stage2_tri/pred_%j.out
 #SBATCH --error=runs/stage2_tri/pred_%j.err
 
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
+PROJECT_DIR=/path/to/coronary-seg
 DATA_ROOT=/path/to/cache/stage2_tri/test
 
 cd "$PROJECT_DIR" || exit 1

@@ -1,17 +1,17 @@
 #!/bin/bash --login
 #SBATCH --job-name=s2_prep_test
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --time=6:00:00
 #SBATCH --output=runs/stage2/prep_test_%j.out
 
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-cd ~/scratch/Coronary-Artery-segmentation/coronary-seg
+cd /path/to/coronary-seg
 export PYTHONPATH=.
 
 echo "生成 stage-2 test 数据 (单轴, ckpt=exp_2p5d)"

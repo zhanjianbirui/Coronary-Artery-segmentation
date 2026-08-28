@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Coronary artery segmentation from 3D CTA volumes (ImageCAS dataset: 1000 cases). Uses a **2.5D approach**: stacks 2k+1 adjacent slices as channels, feeds into a 2D network (SegResNet/UNet), predicts the center slice's vessel mask. At inference, slices are predicted individually then reassembled into 3D for evaluation. Designed for a SLURM cluster (SLURM + A100 80GB).
+Coronary artery segmentation from 3D CTA volumes (ImageCAS dataset: 1000 cases). Uses a **2.5D approach**: stacks 2k+1 adjacent slices as channels, feeds into a 2D network (SegResNet/UNet), predicts the center slice's vessel mask. At inference, slices are predicted individually then reassembled into 3D for evaluation. Training targets a single CUDA GPU; `slurm/` holds optional batch-job wrappers.
 
 ## Architecture
 
@@ -25,7 +25,7 @@ The codebase has evolved from a 3D U-Net pipeline (configs/default.yaml still re
 - Backbones: `segresnet` (default) or `unet`
 
 **Engine (`src/engine.py`):**
-- Uses bfloat16 AMP on A100 (no GradScaler needed); falls back to float16+GradScaler
+- Uses bfloat16 AMP where supported (no GradScaler needed); falls back to float16+GradScaler
 - Gradient-level nan/inf protection: skips optimizer step if gradients are non-finite
 
 **Post-processing (`scripts/predict/predict.py` + `src/smart_reconnect.py`):**
@@ -35,23 +35,24 @@ The codebase has evolved from a 3D U-Net pipeline (configs/default.yaml still re
 ## Common Commands
 
 ```bash
-# Environment setup (SLURM login node)
-module load apps/binapps/anaconda3/2024.10
-conda activate ~/scratch/envs/coronary
+# Environment setup
+conda activate coronary          # or any Python 3.10+ env
 pip install -r requirements.txt
 pip install torch --index-url https://download.pytorch.org/whl/cu124
 
-# Download data + generate splits
-python scripts/data/prepare_data.py --config configs/default.yaml
+# Data + splits: use the committed splits/split.json and repoint its absolute paths
+# (scripts/data/prepare_data.py is STALE — it imports functions that no longer exist in src/data.py)
+python scripts/data/check_data.py --data-root /path/to/ImageCAS   # integrity check only
 
 # Sanity check: overfit one batch (CPU, small scale)
 CUDA_VISIBLE_DEVICES="" python scripts/train/train.py \
     --cache-dir /path/to/cache --overfit-one-batch \
     --crop-size 128 --max-cases 5 --steps 150 --num-workers 0
 
-# Full training (GPU)
+# Full training (GPU) — these are the values that produced the reported model,
+# NOT the argparse defaults (see slurm/train/train_2p5d.sbatch)
 python scripts/train/train.py --cache-dir /path/to/cache \
-    --epochs 100 --crop-size 512 --batch-size 8
+    --epochs 70 --crop-size 384 --batch-size 32 --lr 3e-4
 
 # Resume training
 python scripts/train/train.py --cache-dir /path/to/cache --resume

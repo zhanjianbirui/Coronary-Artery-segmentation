@@ -9,7 +9,7 @@ Step 2: 预处理 + 2.5D 切片（单病例验证）
 
 不训练、不改数据，只读一个病例 + 写 PNG 到 --out-dir。
 
-用法（在集群 coronary 环境下）：
+用法：
   python scripts/figs/vis_slices.py \
       --split-json splits/split.json \
       --k 2 \

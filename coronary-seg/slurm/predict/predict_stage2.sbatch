@@ -1,6 +1,6 @@
 #!/bin/bash --login
 # ============================================================
-# SLURM SLURM — Stage-2 3D 精修推理 + 全量测试集评估
+# SLURM — Stage-2 3D 精修推理 + 全量测试集评估
 #
 # 这是当前最大的空白：Stage-2 已训完（best val_dice=0.8167 @ ep18），
 # 但那是 3D patch 级指标，与 Stage-1 的 slice 级 0.8121 **不是一个口径**，
@@ -9,7 +9,7 @@
 #
 # !! 前置依赖 !!
 #   必须先跑 slurm/data/stage2_prep_test.sbatch 生成 test 集 npz。
-#   检查方法（login 节点）：
+#   检查方法：
 #     ls /path/to/cache/stage2/test/*.npz | wc -l   # 应为 200
 #   若为 0 或目录不存在，先 sbatch slurm/data/stage2_prep_test.sbatch
 #
@@ -17,23 +17,23 @@
 # ============================================================
 #SBATCH --job-name=pred_s2
 #SBATCH --account=<your-account>
-#SBATCH --partition=gpuA
-#SBATCH --gres=gpu:a100_80g:1
+#SBATCH --partition=<your-gpu-partition>
+#SBATCH --gres=gpu:1                  # 资源名按站点而定；所报模型用的是 80GB 显存
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=12:00:00
 #SBATCH --output=runs/stage2/pred_s2_%j.out
 #SBATCH --error=runs/stage2/pred_s2_%j.err
 
-module load apps/binapps/anaconda3/2024.10
+# 激活 Python 环境（按你的站点/个人配置修改这几行）
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ~/scratch/envs/coronary
+conda activate coronary
 
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-PROJECT_DIR=~/scratch/Coronary-Artery-segmentation/coronary-seg
+PROJECT_DIR=/path/to/coronary-seg
 # 注意是 <out-dir>/test —— predict_stage2.py 直接 glob <data_root>/*.npz，
 # 不会自己往 split 子目录里走
 DATA_ROOT=/path/to/cache/stage2/test

@@ -20,8 +20,8 @@ preprocess:
   patch_size: [128, 128, 128]
 
 train:
-  max_epochs: 250                # 一个4天作业内可跑完整个余弦退火 (~16min/epoch x250 ≈ 67h)
-  batch_size: 2                  # SegResNet 较重; A100 80G 若显存富余可试 4
+  max_epochs: 250                # 单次作业内跑完整个余弦退火 (~16min/epoch x250 ≈ 67h)
+  batch_size: 2                  # SegResNet 较重; 显存富余可试 4
   samples_per_image: 2
   pos_ratio: 0.8
   lr: 0.0002
@@ -56,4 +56,4 @@ infer:
   min_component_voxels: 30       # 删除 <30 体素的连通域 (去碎片), 0=关闭
 
 output:
-  work_dir: runs/exp_segresnet   # 新目录, 不覆盖旧的 exp_a100
+  work_dir: runs/exp_segresnet   # 新目录, 不覆盖旧的实验
